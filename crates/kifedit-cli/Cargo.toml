@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
+kifedit-project = { version = "0.1.0", path = "../kifedit-project" }
 kifedit-syntax = { version = "0.1.0", path = "../kifedit-syntax" }
 
 [dev-dependencies]
