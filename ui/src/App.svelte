@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
+  import Tree from './lib/Tree.svelte'
 
   type FileSummary = {
     path: string
@@ -55,6 +56,14 @@
   {/if}
 
   {#if summary}
+    <div class="layout">
+      <aside>
+        <h2>Classes</h2>
+        {#key summary}
+          <Tree view="classes" />
+        {/key}
+      </aside>
+      <section>
     <p>
       {summary.formulaCount.toLocaleString()} formulas in {summary.files.length} files.
       Load time: {summary.loadMs.toFixed(0)} ms.
@@ -74,6 +83,8 @@
         {/each}
       </tbody>
     </table>
+      </section>
+    </div>
   {:else if !error}
     <p class="hint">Open a project.toml file to start.</p>
   {/if}
