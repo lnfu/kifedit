@@ -1,89 +1,80 @@
-<script>
-  import svelteLogo from './assets/svelte.svg'
-  import viteLogo from './assets/vite.svg'
-  import heroImg from './assets/hero.png'
-  import Counter from './lib/Counter.svelte'
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/core'
+  import { open } from '@tauri-apps/plugin-dialog'
+
+  type FileSummary = {
+    path: string
+    role: 'library' | 'editable'
+    formulas: number
+    syntaxErrors: number
+  }
+
+  type ProjectSummary = {
+    name: string
+    root: string
+    files: FileSummary[]
+    formulaCount: number
+    loadMs: number
+  }
+
+  let summary = $state<ProjectSummary | null>(null)
+  let error = $state<string | null>(null)
+  let loading = $state(false)
+
+  async function openProject() {
+    const path = await open({
+      title: 'Open project.toml',
+      filters: [{ name: 'Project file', extensions: ['toml'] }],
+    })
+    if (typeof path !== 'string') return
+
+    loading = true
+    error = null
+    try {
+      summary = await invoke<ProjectSummary>('open_project', { path })
+    } catch (e) {
+      error = String(e)
+    } finally {
+      loading = false
+    }
+  }
 </script>
 
-<section id="center">
-  <div class="hero">
-    <img src={heroImg} class="base" width="170" height="179" alt="" />
-    <img src={svelteLogo} class="framework" alt="Svelte logo" />
-    <img src={viteLogo} class="vite" alt="Vite logo" />
-  </div>
-  <div>
-    <h1>Get started</h1>
-    <p>Edit <code>src/App.svelte</code> and save to test <code>HMR</code></p>
-  </div>
-  <Counter />
-</section>
+<main>
+  <header>
+    <button onclick={openProject} disabled={loading}>
+      {loading ? 'Opening…' : 'Open Project'}
+    </button>
+    {#if summary}
+      <span class="project">{summary.name}</span>
+    {/if}
+  </header>
 
-<div class="ticks"></div>
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
 
-<section id="next-steps">
-  <div id="docs">
-    <svg class="icon" role="presentation" aria-hidden="true">
-      <use href="/icons.svg#documentation-icon"></use>
-    </svg>
-    <h2>Documentation</h2>
-    <p>Your questions, answered</p>
-    <ul>
-      <li>
-        <a href="https://vite.dev/" target="_blank" rel="noreferrer">
-          <img class="logo" src={viteLogo} alt="" />
-          Explore Vite
-        </a>
-      </li>
-      <li>
-        <a href="https://svelte.dev/" target="_blank" rel="noreferrer">
-          <img class="button-icon" src={svelteLogo} alt="" />
-          Learn more
-        </a>
-      </li>
-    </ul>
-  </div>
-  <div id="social">
-    <svg class="icon" role="presentation" aria-hidden="true">
-      <use href="/icons.svg#social-icon"></use>
-    </svg>
-    <h2>Connect with us</h2>
-    <p>Join the Vite community</p>
-    <ul>
-      <li>
-        <a href="https://github.com/vitejs/vite" target="_blank" rel="noreferrer">
-          <svg class="button-icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#github-icon"></use>
-          </svg>
-          GitHub
-        </a>
-      </li>
-      <li>
-        <a href="https://chat.vite.dev/" target="_blank" rel="noreferrer">
-          <svg class="button-icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#discord-icon"></use>
-          </svg>
-          Discord
-        </a>
-      </li>
-      <li>
-        <a href="https://x.com/vite_js" target="_blank" rel="noreferrer">
-          <svg class="button-icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#x-icon"></use>
-          </svg>
-          X.com
-        </a>
-      </li>
-      <li>
-        <a href="https://bsky.app/profile/vite.dev" target="_blank" rel="noreferrer">
-          <svg class="button-icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#bluesky-icon"></use>
-          </svg>
-          Bluesky
-        </a>
-      </li>
-    </ul>
-  </div>
-</section>
-
-<div class="ticks"></div>
-<section id="spacer"></section>
+  {#if summary}
+    <p>
+      {summary.formulaCount.toLocaleString()} formulas in {summary.files.length} files.
+      Load time: {summary.loadMs.toFixed(0)} ms.
+    </p>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Role</th><th>Formulas</th><th>Syntax errors</th></tr>
+      </thead>
+      <tbody>
+        {#each summary.files as file (file.path)}
+          <tr>
+            <td class="path">{file.path}</td>
+            <td>{file.role}</td>
+            <td class="number">{file.formulas.toLocaleString()}</td>
+            <td class="number">{file.syntaxErrors}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else if !error}
+    <p class="hint">Open a project.toml file to start.</p>
+  {/if}
+</main>
