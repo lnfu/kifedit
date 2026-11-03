@@ -21,6 +21,7 @@ pub fn parse(src: &str) -> Parse {
         tokens: lex(src),
         pos: 0,
         offset: TextSize::new(0),
+        content_end: TextSize::new(0),
         depth: 0,
         builder: GreenNodeBuilder::new(),
         errors: Vec::new(),
@@ -32,6 +33,7 @@ struct Parser<'a> {
     tokens: Vec<Token<'a>>,
     pos: usize,    // 下一個記號的索引
     offset: TextSize, // 下一個記號的位元組位置
+    content_end: TextSize, // 最後一個非空白記號的結尾
     depth: usize,  // 目前未閉合的串列數
     builder: GreenNodeBuilder<'static>,
     errors: Vec<SyntaxError>,
@@ -132,6 +134,9 @@ impl<'a> Parser<'a> {
         let start = self.offset;
         self.offset += TextSize::of(token.text);
         self.pos += 1;
+        if token.kind != Whitespace {
+            self.content_end = self.offset;
+        }
         if token.kind == ErrorToken {
             self.error(start, SyntaxErrorKind::UnclosedString);
         }
@@ -166,9 +171,9 @@ impl<'a> Parser<'a> {
         false
     }
 
-    // 錯誤範圍一律是 start 到目前位置
+    // 錯誤範圍是 start 到最後一個非空白記號的結尾，編輯器的底線不會延伸到行尾之後
     fn error(&mut self, start: TextSize, kind: SyntaxErrorKind) {
-        let range = TextRange::new(start, self.offset);
+        let range = TextRange::new(start, self.content_end.max(start));
         self.errors.push(SyntaxError { range, kind });
     }
 }
@@ -237,7 +242,7 @@ mod tests {
                 Word@9..10 "d"
                 RParen@10..11 ")"
               Whitespace@11..12 "\n"
-            E001 0..6: The list has no closing parenthesis.
+            E001 0..5: The list has no closing parenthesis.
         "#]]);
     }
 
