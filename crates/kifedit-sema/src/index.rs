@@ -82,7 +82,6 @@ impl Index {
         self.insert_file(file, FileIndex::build(file, root, interner));
     }
 
-    // 呼叫端可以先平行建立各檔的 FileIndex，再逐一插入
     pub fn insert_file(&mut self, file: FileId, index: FileIndex) {
         self.files.insert(file, index);
     }
@@ -119,6 +118,16 @@ impl Index {
         self.files
             .values()
             .flat_map(move |f| f.select(f.by_first_arg.get(&(relation, first_arg))))
+    }
+
+    pub fn terms(&self) -> Vec<Symbol> {
+        let mut seen = rustc_hash::FxHashSet::default();
+        for file in self.files.values() {
+            seen.extend(file.mentions.keys().copied());
+        }
+        let mut terms: Vec<Symbol> = seen.into_iter().collect();
+        terms.sort_unstable();
+        terms
     }
 
     pub fn formula_count(&self) -> usize {
