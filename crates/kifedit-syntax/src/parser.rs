@@ -1,19 +1,8 @@
 use rowan::{GreenNode, GreenNodeBuilder, TextRange, TextSize};
 
 use crate::SyntaxKind::*;
-use crate::SyntaxNode;
 use crate::lexer::{Token, lex};
-
-pub const UNCLOSED_LIST: &str = "The list has no closing parenthesis.";
-pub const UNOPENED_RPAREN: &str = "This closing parenthesis has no opening parenthesis.";
-pub const TOP_LEVEL_ATOM: &str = "A top-level form must start with an opening parenthesis.";
-pub const UNCLOSED_STRING: &str = "The string has no closing quotation mark.";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SyntaxError {
-    pub range: TextRange, // 位元組範圍，與樹上節點的位置同一種型別
-    pub message: &'static str,
-}
+use crate::{SyntaxError, SyntaxErrorKind, SyntaxNode};
 
 #[derive(Debug, Clone)]
 pub struct Parse {
@@ -59,6 +48,8 @@ impl<'a> Parser<'a> {
             }
         }
         self.builder.finish_node();
+        // 錯誤依出現位置排序。sort_by_key 是穩定排序，起點相同的錯誤保持回報順序
+        self.errors.sort_by_key(|e| e.range.start());
         Parse {
             green: self.builder.finish(),
             errors: self.errors,
@@ -73,9 +64,14 @@ impl<'a> Parser<'a> {
         let kind = if closed { TopLevelForm } else { Error };
         self.builder.start_node_at(checkpoint, kind.into());
         self.builder.finish_node();
-        if !closed {
-            self.error(start, UNCLOSED_LIST);
+        // 未閉合的字串會吃到檔尾，串列因此無法閉合；這是連帶錯誤，只回報字串那一個
+        if !closed && !self.stopped_by_unclosed_string() {
+            self.error(start, SyntaxErrorKind::UnclosedList);
         }
+    }
+
+    fn stopped_by_unclosed_string(&self) -> bool {
+        self.pos == self.tokens.len() && self.tokens.last().is_some_and(|t| t.kind == ErrorToken)
     }
 
     fn nested_list(&mut self) -> bool {
@@ -120,9 +116,9 @@ impl<'a> Parser<'a> {
         self.bump();
         self.builder.finish_node();
         match kind {
-            RParen => self.error(start, UNOPENED_RPAREN),
+            RParen => self.error(start, SyntaxErrorKind::UnopenedRParen),
             ErrorToken => {} // bump 已經回報
-            _ => self.error(start, TOP_LEVEL_ATOM),
+            _ => self.error(start, SyntaxErrorKind::TopLevelAtom),
         }
     }
 
@@ -137,7 +133,7 @@ impl<'a> Parser<'a> {
         self.offset += TextSize::of(token.text);
         self.pos += 1;
         if token.kind == ErrorToken {
-            self.error(start, UNCLOSED_STRING);
+            self.error(start, SyntaxErrorKind::UnclosedString);
         }
     }
 
@@ -171,19 +167,31 @@ impl<'a> Parser<'a> {
     }
 
     // 錯誤範圍一律是 start 到目前位置
-    fn error(&mut self, start: TextSize, message: &'static str) {
+    fn error(&mut self, start: TextSize, kind: SyntaxErrorKind) {
         let range = TextRange::new(start, self.offset);
-        self.errors.push(SyntaxError { range, message });
+        self.errors.push(SyntaxError { range, kind });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::SyntaxKind;
+    use expect_test::{Expect, expect};
 
-    fn top_kinds(src: &str) -> Vec<SyntaxKind> {
-        parse(src).syntax().children().map(|n| n.kind()).collect()
+    use super::*;
+
+    // 快照：整棵樹加上錯誤清單。預期結果留空時，執行 UPDATE_EXPECT=1 cargo test 自動填入
+    fn check(src: &str, expect: Expect) {
+        let parsed = parse(src);
+        let mut actual = format!("{:#?}", parsed.syntax());
+        for error in &parsed.errors {
+            actual += &format!(
+                "{} {:?}: {}\n",
+                error.kind.code(),
+                error.range,
+                error.kind.message()
+            );
+        }
+        expect.assert_eq(&actual);
     }
 
     #[test]
@@ -194,42 +202,129 @@ mod tests {
 
     #[test]
     fn nested_lists() {
-        let parsed = parse("(a (b c))");
-        let form = parsed.syntax().first_child().unwrap();
-        assert_eq!(form.kind(), TopLevelForm);
-        assert_eq!(form.first_child().unwrap().kind(), List);
-        assert!(parsed.errors.is_empty());
+        check("(a (b c))", expect![[r#"
+            File@0..9
+              TopLevelForm@0..9
+                LParen@0..1 "("
+                Word@1..2 "a"
+                Whitespace@2..3 " "
+                List@3..8
+                  LParen@3..4 "("
+                  Word@4..5 "b"
+                  Whitespace@5..6 " "
+                  Word@6..7 "c"
+                  RParen@7..8 ")"
+                RParen@8..9 ")"
+        "#]]);
     }
 
     #[test]
     fn unclosed_form_stops_at_line_start_paren() {
-        let src = "(a (b\n(c d)\n";
-        assert_eq!(top_kinds(src), [Error, TopLevelForm]);
-        let errors = parse(src).errors;
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].message, UNCLOSED_LIST);
-        // "(a (b\n" 共 6 個位元組
-        assert_eq!(errors[0].range, TextRange::new(0.into(), 6.into()));
+        check("(a (b\n(c d)\n", expect![[r#"
+            File@0..12
+              Error@0..6
+                LParen@0..1 "("
+                Word@1..2 "a"
+                Whitespace@2..3 " "
+                List@3..6
+                  LParen@3..4 "("
+                  Word@4..5 "b"
+                  Whitespace@5..6 "\n"
+              TopLevelForm@6..11
+                LParen@6..7 "("
+                Word@7..8 "c"
+                Whitespace@8..9 " "
+                Word@9..10 "d"
+                RParen@10..11 ")"
+              Whitespace@11..12 "\n"
+            E001 0..6: The list has no closing parenthesis.
+        "#]]);
     }
 
     #[test]
     fn line_start_paren_in_closed_form_does_not_split() {
         // Biography.kif:428 的寫法
-        let src = "(=>\n(attribute ?P Economist)\n(hasExpertise ?P Economics))\n(instance A B)\n";
-        assert_eq!(top_kinds(src), [TopLevelForm, TopLevelForm]);
-        assert!(parse(src).errors.is_empty());
+        check("(=>\n(a ?P)\n(b ?P))\n(c)\n", expect![[r#"
+            File@0..23
+              TopLevelForm@0..18
+                LParen@0..1 "("
+                Word@1..3 "=>"
+                Whitespace@3..4 "\n"
+                List@4..10
+                  LParen@4..5 "("
+                  Word@5..6 "a"
+                  Whitespace@6..7 " "
+                  Var@7..9 "?P"
+                  RParen@9..10 ")"
+                Whitespace@10..11 "\n"
+                List@11..17
+                  LParen@11..12 "("
+                  Word@12..13 "b"
+                  Whitespace@13..14 " "
+                  Var@14..16 "?P"
+                  RParen@16..17 ")"
+                RParen@17..18 ")"
+              Whitespace@18..19 "\n"
+              TopLevelForm@19..22
+                LParen@19..20 "("
+                Word@20..21 "c"
+                RParen@21..22 ")"
+              Whitespace@22..23 "\n"
+        "#]]);
     }
 
     #[test]
     fn indented_paren_does_not_split_form() {
-        assert_eq!(top_kinds("(a\n  (b c))\n(d)"), [TopLevelForm, TopLevelForm]);
+        check("(a\n  (b c))\n(d)", expect![[r#"
+            File@0..15
+              TopLevelForm@0..11
+                LParen@0..1 "("
+                Word@1..2 "a"
+                Whitespace@2..5 "\n  "
+                List@5..10
+                  LParen@5..6 "("
+                  Word@6..7 "b"
+                  Whitespace@7..8 " "
+                  Word@8..9 "c"
+                  RParen@9..10 ")"
+                RParen@10..11 ")"
+              Whitespace@11..12 "\n"
+              TopLevelForm@12..15
+                LParen@12..13 "("
+                Word@13..14 "d"
+                RParen@14..15 ")"
+        "#]]);
     }
 
     #[test]
     fn stray_tokens_at_top_level() {
-        let parsed = parse("(a)) b\n");
-        assert_eq!(top_kinds("(a)) b\n"), [TopLevelForm, Error, Error]);
-        let messages: Vec<_> = parsed.errors.iter().map(|e| e.message).collect();
-        assert_eq!(messages, [UNOPENED_RPAREN, TOP_LEVEL_ATOM]);
+        check("(a)) b\n", expect![[r#"
+            File@0..7
+              TopLevelForm@0..3
+                LParen@0..1 "("
+                Word@1..2 "a"
+                RParen@2..3 ")"
+              Error@3..4
+                RParen@3..4 ")"
+              Whitespace@4..5 " "
+              Error@5..6
+                Word@5..6 "b"
+              Whitespace@6..7 "\n"
+            E001 3..4: This closing parenthesis has no opening parenthesis.
+            E001 5..6: A top-level form must start with an opening parenthesis.
+        "#]]);
+    }
+
+    #[test]
+    fn unclosed_string() {
+        check("(a \"oops", expect![[r#"
+            File@0..8
+              Error@0..8
+                LParen@0..1 "("
+                Word@1..2 "a"
+                Whitespace@2..3 " "
+                ErrorToken@3..8 "\"oops"
+            E001 3..8: The string has no closing quotation mark.
+        "#]]);
     }
 }

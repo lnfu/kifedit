@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 logos = "0.16.1"
 rowan = "0.17.0"
+
+[dev-dependencies]
+expect-test = "1.5.1"
