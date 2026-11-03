@@ -1,0 +1,12 @@
+[package]
+name = "kifedit-sema"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kifedit-syntax = { version = "0.1.0", path = "../kifedit-syntax" }
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
+rustc-hash = "2.1.3"
+
+[dev-dependencies]
+expect-test = "1.5.1"
