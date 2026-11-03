@@ -1,0 +1,11 @@
+[package]
+name = "kifedit-reason"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kifedit-sema = { version = "0.1.0", path = "../kifedit-sema" }
+rustc-hash = "2.1.3"
+
+[dev-dependencies]
+kifedit-syntax = { path = "../kifedit-syntax" }
