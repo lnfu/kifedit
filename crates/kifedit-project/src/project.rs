@@ -1,12 +1,16 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use kifedit_reason::Taxonomy;
-use kifedit_sema::{FileId, FileIndex, Index, Interner};
+use kifedit_reason::{QueryResult, Taxonomy, evaluate};
+use kifedit_sema::{FileId, FileIndex, Index, Interner, lower_file};
+use kifedit_syntax::parser::parse;
 use kifedit_syntax::{Document, TextEdit};
 use rayon::prelude::*;
 
-use crate::{Config, EditFileError, ProjectError};
+use crate::{Config, EditFileError, ProjectError, QueryError};
+
+// 查詢文字不屬於任何專案檔案
+const QUERY_FILE: FileId = FileId(u32::MAX);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileRole {
@@ -26,9 +30,9 @@ pub struct SourceFile {
 pub struct Project {
     root: PathBuf,
     config: Config,
-    files: Vec<SourceFile>,
-    interner: Interner,
-    index: Index,
+    pub(crate) files: Vec<SourceFile>,
+    pub(crate) interner: Interner,
+    pub(crate) index: Index,
     taxonomy: Taxonomy,
 }
 
@@ -138,6 +142,25 @@ impl Project {
         self.index.insert_file(id, file_index);
         self.taxonomy = Taxonomy::build(&self.index, &self.interner);
         Ok(inverse)
+    }
+
+    /// 內建層的結構化查詢，例如 "(instance ?X Camera)"（§5.4）
+    pub fn query(&self, text: &str, limit: usize) -> Result<QueryResult, QueryError> {
+        let parsed = parse(text);
+        if !parsed.errors.is_empty() {
+            return Err(QueryError::Syntax);
+        }
+        let formulas = lower_file(QUERY_FILE, &parsed.syntax(), &self.interner);
+        let [formula] = formulas.as_slice() else {
+            return Err(QueryError::NotOneQuery);
+        };
+        Ok(evaluate(
+            &formula.term,
+            &self.index,
+            &self.taxonomy,
+            &self.interner,
+            limit,
+        ))
     }
 
     pub fn save(&self, id: FileId) -> io::Result<()> {

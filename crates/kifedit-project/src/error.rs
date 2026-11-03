@@ -18,6 +18,15 @@ pub enum ProjectError {
     DuplicateFile { path: PathBuf },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum QueryError {
+    #[error("The query has a syntax error. Write one query in parentheses, for example (instance ?X Camera).")]
+    Syntax,
+
+    #[error("Write one query in parentheses, for example (instance ?X Camera).")]
+    NotOneQuery,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum EditFileError {
     #[error("There is no file with this ID.")]
