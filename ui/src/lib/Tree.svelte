@@ -19,7 +19,7 @@
   <p class="error">{error}</p>
 {:else}
   <ul>
-    {#each roots as root (root.kind + root.name)}
+    {#each roots as root (root.kind + root.id)}
       <TreeNode {view} node={root} {onSelect} />
     {/each}
   </ul>

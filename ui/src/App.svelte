@@ -25,6 +25,43 @@
   let selected = $state<string | null>(null)
   let history = $state<string[]>([])
 
+  const views = [
+    { id: 'classes', label: 'Classes' },
+    { id: 'relations', label: 'Relations' },
+    { id: 'attributes', label: 'Attributes' },
+    { id: 'files', label: 'Files' },
+  ]
+  let view = $state('classes')
+
+  // 側欄寬度存在 localStorage；無法使用時以預設值顯示
+  const WIDTH_KEY = 'kifedit.sidebarWidth'
+  let sidebarWidth = $state(readWidth())
+
+  function readWidth() {
+    try {
+      return Number(localStorage.getItem(WIDTH_KEY)) || 360
+    } catch {
+      return 360
+    }
+  }
+
+  function startResize(event: PointerEvent) {
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    const move = (e: PointerEvent) => {
+      sidebarWidth = Math.min(800, Math.max(200, startWidth + e.clientX - startX))
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      try {
+        localStorage.setItem(WIDTH_KEY, String(sidebarWidth))
+      } catch {}
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
   async function openProject() {
     const path = await open({
       title: 'Open project.toml',
@@ -73,36 +110,30 @@
 
   {#if summary}
     <div class="layout">
-      <aside>
-        <h2>Classes</h2>
+      <aside style:width="{sidebarWidth}px">
+        <nav class="tabs">
+          {#each views as v (v.id)}
+            <button class:active={view === v.id} onclick={() => (view = v.id)}>{v.label}</button>
+          {/each}
+        </nav>
         {#key summary}
-          <Tree view="classes" onSelect={navigate} />
+          {#key view}
+            <Tree {view} onSelect={navigate} />
+          {/key}
         {/key}
       </aside>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="resizer" onpointerdown={startResize}></div>
       <section class="content">
         {#if selected}
           <button onclick={back} disabled={history.length === 0}>← Back</button>
           <TermPage name={selected} onNavigate={navigate} />
         {:else}
-          <p>
+          <p class="hint">
             {summary.formulaCount.toLocaleString()} formulas in {summary.files.length} files.
             Load time: {summary.loadMs.toFixed(0)} ms.
           </p>
-          <table>
-            <thead>
-              <tr><th>File</th><th>Role</th><th>Formulas</th><th>Syntax errors</th></tr>
-            </thead>
-            <tbody>
-              {#each summary.files as file (file.path)}
-                <tr>
-                  <td class="path">{file.path}</td>
-                  <td>{file.role}</td>
-                  <td class="number">{file.formulas.toLocaleString()}</td>
-                  <td class="number">{file.syntaxErrors}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <p class="hint">Select a term in the tree.</p>
         {/if}
       </section>
     </div>

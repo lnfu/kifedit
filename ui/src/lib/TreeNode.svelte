@@ -17,11 +17,16 @@
     expanded = !expanded
     if (expanded && children === null) {
       try {
-        children = await invoke<Node[]>('tree_children', { view, node: node.name })
+        children = await invoke<Node[]>('tree_children', { view, node: node.id })
       } catch (e) {
         error = String(e)
       }
     }
+  }
+
+  function select() {
+    if (node.term) onSelect(node.term)
+    else if (node.hasChildren) toggle()
   }
 </script>
 
@@ -34,7 +39,7 @@
     {:else}
       <span class="toggle"></span>
     {/if}
-    <button class="name {node.kind}" onclick={() => onSelect(node.name)}>{node.name}</button>
+    <button class="name {node.kind}" onclick={select}>{node.label}</button>
     {#if node.otherParents > 0}
       <span class="parents">+{node.otherParents} other parents</span>
     {/if}
@@ -44,7 +49,7 @@
       <p class="error">{error}</p>
     {:else if children}
       <ul>
-        {#each children as child (child.kind + child.name)}
+        {#each children as child (child.kind + child.id)}
           <TreeNode {view} node={child} {onSelect} />
         {/each}
       </ul>
@@ -66,6 +71,7 @@
   }
   .toggle {
     width: 16px;
+    flex: none;
     padding: 0;
     border: none;
     background: none;
@@ -79,12 +85,17 @@
     color: inherit;
     font: inherit;
     cursor: pointer;
+    text-align: left;
   }
   .name:hover {
     text-decoration: underline;
   }
-  .instance {
+  .member {
     font-style: italic;
+  }
+  .formula {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
   }
   .parents {
     color: var(--muted);

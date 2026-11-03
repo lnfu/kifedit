@@ -40,19 +40,47 @@ header {
   margin-top: 12px;
 }
 
+.layout {
+  gap: 0;
+}
+
 aside {
-  width: 360px;
+  flex: none;
   max-height: calc(100vh - 80px);
   overflow: auto;
-  border-right: 1px solid var(--border);
   padding-right: 8px;
 }
 
-aside h2 {
-  font-size: 13px;
-  margin: 0 0 8px;
+.resizer {
+  flex: none;
+  width: 6px;
+  margin-right: 12px;
+  cursor: col-resize;
+  border-left: 1px solid var(--border);
+}
+
+.resizer:hover {
+  border-left: 2px solid var(--muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tabs button {
+  border: 1px solid var(--border);
+  background: none;
   color: var(--muted);
-  text-transform: uppercase;
+  padding: 2px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  color: var(--text);
+  border-color: var(--text);
 }
 
 .content {

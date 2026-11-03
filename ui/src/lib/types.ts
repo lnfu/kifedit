@@ -1,8 +1,10 @@
 export type TreeNodeData = {
-  name: string
-  kind: 'class' | 'instance'
+  id: string
+  label: string
+  kind: 'class' | 'member' | 'file' | 'group' | 'formula'
   hasChildren: boolean
   otherParents: number
+  term: string | null
 }
 
 export type FormulaRef = {

@@ -46,61 +46,17 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> Result<Pr
     Ok(summary)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TreeNode {
-    name: String,
-    kind: &'static str, // "class" 或 "instance"
-    has_children: bool,
-    other_parents: usize,
-}
-
 const NO_PROJECT: &str = "Open a project first.";
 
-/// 樹狀介面的子節點，展開時才查詢（§8.1）。node 為 None 時回傳根節點
 #[tauri::command]
-pub fn tree_children(view: String, node: Option<String>, state: State<'_, AppState>) -> Result<Vec<TreeNode>, String> {
+pub fn tree_children(
+    view: String,
+    node: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::tree::TreeNode>, String> {
     let guard = state.project.lock().unwrap();
     let project = guard.as_ref().ok_or(NO_PROJECT)?;
-    if view != "classes" {
-        return Err(format!("The tree view {view:?} is not available."));
-    }
-    let interner = project.interner();
-    let taxonomy = project.taxonomy();
-    let hierarchy = &taxonomy.subclass;
-
-    let (mut classes, mut instances) = match node {
-        None => {
-            let roots = match interner.get("Entity").filter(|&s| hierarchy.contains(s)) {
-                Some(entity) => vec![entity],
-                None => hierarchy.nodes().filter(|&s| hierarchy.parents(s).is_empty()).collect(),
-            };
-            (roots, Vec::new())
-        }
-        Some(name) => match interner.get(&name) {
-            Some(symbol) => (
-                hierarchy.children(symbol).to_vec(),
-                taxonomy.instances_of(symbol).to_vec(),
-            ),
-            None => (Vec::new(), Vec::new()),
-        },
-    };
-    classes.sort_by_key(|&s| interner.resolve(s));
-    instances.sort_by_key(|&s| interner.resolve(s));
-
-    let class_nodes = classes.into_iter().map(|s| TreeNode {
-        name: interner.resolve(s).to_string(),
-        kind: "class",
-        has_children: !hierarchy.children(s).is_empty() || !taxonomy.instances_of(s).is_empty(),
-        other_parents: hierarchy.parents(s).len().saturating_sub(1),
-    });
-    let instance_nodes = instances.into_iter().map(|s| TreeNode {
-        name: interner.resolve(s).to_string(),
-        kind: "instance",
-        has_children: false,
-        other_parents: taxonomy.instance_of(s).len().saturating_sub(1),
-    });
-    Ok(class_nodes.chain(instance_nodes).collect())
+    crate::tree::children(project, &view, node.as_deref())
 }
 
 #[tauri::command]
