@@ -5,13 +5,66 @@ export type TreeNodeData = {
   hasChildren: boolean
   otherParents: number
   term: string | null
+  location: Location | null
+}
+
+export type Location = {
+  file: number
+  line: number
+}
+
+export type Diagnostic = {
+  from: number
+  to: number
+  code: string
+  message: string
+}
+
+export type FileContent = {
+  id: number
+  path: string
+  readOnly: boolean
+  text: string
+  version: number
+  savedVersion: number
+  errors: Diagnostic[]
+}
+
+export type EditOutcome =
+  | { status: 'applied'; version: number; errors: Diagnostic[] }
+  | { status: 'conflict'; version: number; text: string }
+
+export type ArgView = {
+  kind: 'symbol' | 'string' | 'number' | 'other'
+  text: string
 }
 
 export type FormulaRef = {
+  fileId: number
+  index: number
   file: string
   line: number
   text: string
+  editable: boolean
+  args: ArgView[]
 }
+
+export type ValueInput = { kind: 'symbol' | 'string' | 'number'; text: string }
+type FormulaInput = { file: number; index: number }
+
+export type FormInput =
+  | { type: 'addFact'; file: number; relation: string; args: ValueInput[] }
+  | { type: 'changeArgument'; formula: FormulaInput; argument: number; value: ValueInput }
+  | { type: 'deleteFact'; formula: FormulaInput }
+  | { type: 'changeString'; formula: FormulaInput; argument: number; text: string }
+
+export type Preview = {
+  line: number
+  removed: string[]
+  added: string[]
+}
+
+export type EditableFile = { id: number; path: string }
 
 export type DocEntry = {
   relation: 'documentation' | 'termFormat'

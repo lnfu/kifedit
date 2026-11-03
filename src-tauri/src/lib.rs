@@ -1,4 +1,5 @@
 mod commands;
+mod history;
 mod term_page;
 mod tree;
 
@@ -10,7 +11,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::tree_children,
-            commands::term_page
+            commands::term_page,
+            commands::file_text,
+            commands::apply_edits,
+            commands::save_file,
+            commands::undo,
+            commands::redo,
+            commands::preview_form,
+            commands::apply_form
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

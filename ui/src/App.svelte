@@ -3,8 +3,11 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import Tree from './lib/Tree.svelte'
   import TermPage from './lib/TermPage.svelte'
+  import Editor from './lib/Editor.svelte'
+  import type { FileContent, Location } from './lib/types'
 
   type FileSummary = {
+    id: number
     path: string
     role: 'library' | 'editable'
     formulas: number
@@ -75,6 +78,8 @@
       summary = await invoke<ProjectSummary>('open_project', { path })
       selected = null
       history = []
+      file = null
+      panel = 'term'
     } catch (e) {
       error = String(e)
     } finally {
@@ -82,10 +87,27 @@
     }
   }
 
+  let panel = $state<'term' | 'editor'>('term')
+  let file = $state<FileContent | null>(null)
+  let line = $state(1)
+
   function navigate(name: string) {
+    panel = 'term'
     if (selected === name) return
     if (selected) history = [...history, selected]
     selected = name
+  }
+
+  async function openLocation(location: Location) {
+    error = null
+    try {
+      // 每次都向後端取最新內容與版本號，文字以後端為準
+      file = await invoke<FileContent>('file_text', { file: location.file })
+      line = location.line
+      panel = 'editor'
+    } catch (e) {
+      error = String(e)
+    }
   }
 
   function back() {
@@ -118,16 +140,26 @@
         </nav>
         {#key summary}
           {#key view}
-            <Tree {view} onSelect={navigate} />
+            <Tree {view} onSelect={navigate} onOpen={openLocation} />
           {/key}
         {/key}
       </aside>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="resizer" onpointerdown={startResize}></div>
       <section class="content">
-        {#if selected}
+        {#if panel === 'editor' && file}
+          {#if selected}
+            <button onclick={() => (panel = 'term')}>← {selected}</button>
+          {/if}
+          <Editor content={file} {line} />
+        {:else if selected}
           <button onclick={back} disabled={history.length === 0}>← Back</button>
-          <TermPage name={selected} onNavigate={navigate} />
+          <TermPage
+            name={selected}
+            editableFiles={summary.files.filter((f) => f.role === 'editable')}
+            onNavigate={navigate}
+            onOpen={openLocation}
+          />
         {:else}
           <p class="hint">
             {summary.formulaCount.toLocaleString()} formulas in {summary.files.length} files.

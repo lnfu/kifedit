@@ -13,7 +13,14 @@ pub struct TreeNode {
     kind: &'static str, // class、member、file、group、formula
     has_children: bool,
     other_parents: usize,
-    term: Option<String>, // 點選後開啟的詞彙頁
+    term: Option<String>,       // 點選後開啟的詞彙頁
+    location: Option<Location>, // 點選後在編輯器中開啟的位置
+}
+
+#[derive(Serialize)]
+pub struct Location {
+    file: u32,
+    line: usize,
 }
 
 /// 樹狀介面的子節點，展開時才查詢（§8.1）。node 為 None 時回傳根節點
@@ -61,6 +68,7 @@ fn taxonomy_children(project: &Project, root: &str, members: Option<&Hierarchy>,
             has_children,
             other_parents,
             term: Some(name),
+            location: None,
         }
     };
     let class_nodes = class_list.into_iter().map(|s| {
@@ -101,6 +109,10 @@ fn file_children(project: &Project, node: Option<&str>) -> Vec<TreeNode> {
                     has_children: formulas > 0,
                     other_parents: 0,
                     term: None,
+                    location: Some(Location {
+                        file: file.id.0,
+                        line: 1,
+                    }),
                 }
             })
             .collect();
@@ -142,6 +154,7 @@ fn file_children(project: &Project, node: Option<&str>) -> Vec<TreeNode> {
                     has_children: true,
                     other_parents: 0,
                     term: None,
+                    location: None,
                 })
                 .collect()
         }
@@ -162,6 +175,7 @@ fn file_children(project: &Project, node: Option<&str>) -> Vec<TreeNode> {
                         has_children: false,
                         other_parents: 0,
                         term: None,
+                        location: Some(Location { file: id, line }),
                     }
                 })
                 .collect()

@@ -22,3 +22,4 @@ kifedit-project = { version = "0.1.0", path = "../crates/kifedit-project" }
 kifedit-sema = { version = "0.1.0", path = "../crates/kifedit-sema" }
 tauri-plugin-dialog = "2"
 kifedit-reason = { version = "0.1.0", path = "../crates/kifedit-reason" }
+kifedit-syntax = { version = "0.1.0", path = "../crates/kifedit-syntax" }

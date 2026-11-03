@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use kifedit_project::Project;
+use kifedit_project::{FileRole, Project};
 use kifedit_sema::{Formula, Symbol, Term};
 use serde::Serialize;
 
@@ -10,8 +10,18 @@ const EXAMPLE_LIMIT: usize = 5;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FormulaRef {
+    file_id: u32,
+    index: u32,
     file: String,
     line: usize,
+    text: String,
+    editable: bool,
+    args: Vec<ArgView>,
+}
+
+#[derive(Serialize)]
+pub struct ArgView {
+    kind: &'static str, // symbol、string、number、other
     text: String,
 }
 
@@ -184,19 +194,39 @@ pub fn build(project: &Project, name: &str) -> TermPage {
 }
 
 fn formula_ref(project: &Project, formula: &Formula) -> FormulaRef {
-    let Some(file) = project.file(formula.id.file) else {
-        return FormulaRef {
-            file: String::new(),
-            line: 0,
-            text: String::new(),
-        };
-    };
-    let text = file.document.text();
+    let interner = project.interner();
+    let file = project.file(formula.id.file);
+    let text = file.map_or("", |f| f.document.text());
     let start = usize::from(formula.range.start());
     let end = usize::from(formula.range.end());
+
+    // 表單只能修改簡單事實的原子參數（§8.3）
+    let args = match &formula.term {
+        Term::App(head, args) if matches!(head.as_ref(), Term::Symbol(_)) => args
+            .iter()
+            .map(|arg| {
+                let (kind, value) = match arg {
+                    Term::Symbol(s) => ("symbol", interner.resolve(*s)),
+                    Term::Str(s) => ("string", interner.resolve(*s)),
+                    Term::Num(s) => ("number", interner.resolve(*s)),
+                    _ => ("other", ""),
+                };
+                ArgView {
+                    kind,
+                    text: value.to_string(),
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
     FormulaRef {
-        file: file.path.display().to_string(),
-        line: text[..start].matches('\n').count() + 1,
-        text: text[start..end].to_string(),
+        file_id: formula.id.file.0,
+        index: formula.id.index,
+        file: file.map_or(String::new(), |f| f.path.display().to_string()),
+        line: text.get(..start).map_or(0, |t| t.matches('\n').count() + 1),
+        text: text.get(start..end).unwrap_or("").to_string(),
+        editable: file.is_some_and(|f| f.role == FileRole::Editable),
+        args,
     }
 }

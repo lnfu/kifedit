@@ -1884,6 +1884,7 @@ dependencies = [
  "kifedit-project",
  "kifedit-reason",
  "kifedit-sema",
+ "kifedit-syntax",
  "log",
  "serde",
  "serde_json",

@@ -1,13 +1,19 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import TreeNode from './TreeNode.svelte'
-  import type { TreeNodeData as Node } from './types'
+  import type { Location, TreeNodeData as Node } from './types'
 
   let {
     view,
     node,
     onSelect,
-  }: { view: string; node: Node; onSelect: (name: string) => void } = $props()
+    onOpen,
+  }: {
+    view: string
+    node: Node
+    onSelect: (name: string) => void
+    onOpen: (location: Location) => void
+  } = $props()
 
   let expanded = $state(false)
   let children = $state<Node[] | null>(null)
@@ -26,6 +32,7 @@
 
   function select() {
     if (node.term) onSelect(node.term)
+    else if (node.location) onOpen(node.location)
     else if (node.hasChildren) toggle()
   }
 </script>
@@ -50,7 +57,7 @@
     {:else if children}
       <ul>
         {#each children as child (child.kind + child.id)}
-          <TreeNode {view} node={child} {onSelect} />
+          <TreeNode {view} node={child} {onSelect} {onOpen} />
         {/each}
       </ul>
     {/if}

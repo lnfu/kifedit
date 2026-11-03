@@ -19,6 +19,8 @@
     "vite": "^8.3.5"
   },
   "dependencies": {
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
     "@tauri-apps/api": "^2.12.4",
