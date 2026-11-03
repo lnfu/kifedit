@@ -103,6 +103,13 @@ pub fn tree_children(view: String, node: Option<String>, state: State<'_, AppSta
     Ok(class_nodes.chain(instance_nodes).collect())
 }
 
+#[tauri::command]
+pub fn term_page(name: String, state: State<'_, AppState>) -> Result<crate::term_page::TermPage, String> {
+    let guard = state.project.lock().unwrap();
+    let project = guard.as_ref().ok_or(NO_PROJECT)?;
+    Ok(crate::term_page::build(project, &name))
+}
+
 fn summarize(project: &Project, load_ms: f64) -> ProjectSummary {
     let files = project
         .files()

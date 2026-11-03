@@ -3,7 +3,11 @@
   import TreeNode from './TreeNode.svelte'
   import type { TreeNodeData as Node } from './types'
 
-  let { view, node }: { view: string; node: Node } = $props()
+  let {
+    view,
+    node,
+    onSelect,
+  }: { view: string; node: Node; onSelect: (name: string) => void } = $props()
 
   let expanded = $state(false)
   let children = $state<Node[] | null>(null)
@@ -30,7 +34,7 @@
     {:else}
       <span class="toggle"></span>
     {/if}
-    <span class={node.kind}>{node.name}</span>
+    <button class="name {node.kind}" onclick={() => onSelect(node.name)}>{node.name}</button>
     {#if node.otherParents > 0}
       <span class="parents">+{node.otherParents} other parents</span>
     {/if}
@@ -41,7 +45,7 @@
     {:else if children}
       <ul>
         {#each children as child (child.kind + child.name)}
-          <TreeNode {view} node={child} />
+          <TreeNode {view} node={child} {onSelect} />
         {/each}
       </ul>
     {/if}
@@ -67,6 +71,17 @@
     background: none;
     color: inherit;
     cursor: pointer;
+  }
+  .name {
+    border: none;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .name:hover {
+    text-decoration: underline;
   }
   .instance {
     font-style: italic;

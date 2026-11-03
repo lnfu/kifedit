@@ -3,7 +3,7 @@
   import TreeNode from './TreeNode.svelte'
   import type { TreeNodeData as Node } from './types'
 
-  let { view }: { view: string } = $props()
+  let { view, onSelect }: { view: string; onSelect: (name: string) => void } = $props()
 
   let roots = $state<Node[]>([])
   let error = $state<string | null>(null)
@@ -20,7 +20,7 @@
 {:else}
   <ul>
     {#each roots as root (root.kind + root.name)}
-      <TreeNode {view} node={root} />
+      <TreeNode {view} node={root} {onSelect} />
     {/each}
   </ul>
 {/if}
