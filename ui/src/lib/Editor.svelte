@@ -7,9 +7,14 @@
   import { forEachDiagnostic, setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
   import { forceParsing } from '@codemirror/language'
   import { kif, kifHighlight } from './kif'
-  import type { Diagnostic, DiagnosticsChanged, EditOutcome, FileContent, FileState } from './types'
+  import type { Diagnostic, DiagnosticsChanged, EditOutcome, FileContent, FileState, Location } from './types'
 
-  let { content, line, onEdit }: { content: FileContent; line: number; onEdit?: () => void } = $props()
+  let {
+    content,
+    line,
+    onEdit,
+    onOpen,
+  }: { content: FileContent; line: number; onEdit?: () => void; onOpen?: (location: Location) => void } = $props()
 
   let container: HTMLDivElement
   let view: EditorView | null = null
@@ -55,6 +60,11 @@
       to: offsets.get(d.to)!,
       severity: d.severity,
       message: `${d.code} ${d.message}`,
+      // 例如 E004 的 domain 宣告：跳到造成問題的公式
+      actions: d.related.slice(0, 1).map((location) => ({
+        name: 'Open source',
+        apply: () => onOpen?.(location),
+      })),
     }))
   }
 

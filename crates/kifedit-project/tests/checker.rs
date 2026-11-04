@@ -66,7 +66,7 @@ fn edit_sends_the_edited_file_with_the_new_version() {
     checker.edited(LAB_ID);
     let update = next(&receiver);
     assert_eq!((update.file, update.version), (LAB_ID, version));
-    let codes: Vec<&str> = update.diagnostics.iter().map(|d| d.code).collect();
+    let codes: Vec<&str> = update.diagnostics.iter().map(|d| d.diagnostic.code).collect();
     assert_eq!(codes, ["E002"]);
 
     // 函式庫檔的結果沒有變，不再送出

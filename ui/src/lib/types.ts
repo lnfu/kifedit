@@ -13,12 +13,34 @@ export type Location = {
   line: number
 }
 
+export type Severity = 'error' | 'warning' | 'info'
+
 export type Diagnostic = {
   from: number
   to: number
-  severity: 'error' | 'warning' | 'info'
+  line: number
+  column: number
+  severity: Severity
   code: string
   message: string
+  related: Location[]
+}
+
+export type Problem = {
+  fileId: number
+  file: string
+  line: number
+  severity: Severity
+  code: string
+  message: string
+}
+
+export type FileSummary = {
+  id: number
+  path: string
+  role: 'library' | 'editable'
+  formulas: number
+  syntaxErrors: number
 }
 
 export type DiagnosticsChanged = {
@@ -102,6 +124,7 @@ export type TermPageData = {
   declarations: Group
   asArgument: Group
   inRules: Group
+  problems: Problem[]
 }
 
 export type NameHit = { name: string; kinds: string[] }

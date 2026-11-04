@@ -1,7 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use kifedit_project::{FileRole, Project};
-use kifedit_sema::{Formula, Symbol, Term};
+use kifedit_project::{FileRole, Project, Severity};
+use kifedit_sema::{FileId, Formula, Symbol, Term};
+use kifedit_syntax::TextRange;
 use serde::Serialize;
 
 const GROUP_LIMIT: usize = 200;
@@ -17,6 +18,18 @@ pub struct FormulaRef {
     text: String,
     editable: bool,
     args: Vec<ArgView>,
+}
+
+/// 落在此詞彙相關公式內的診斷
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Problem {
+    file_id: u32,
+    file: String,
+    line: usize,
+    severity: &'static str,
+    code: &'static str,
+    message: String,
 }
 
 #[derive(Serialize)]
@@ -60,6 +73,7 @@ pub struct TermPage {
     declarations: Group,
     as_argument: Group,
     in_rules: Group,
+    problems: Vec<Problem>,
 }
 
 const DECLARATIONS: [&str; 4] = ["instance", "subclass", "subrelation", "subAttribute"];
@@ -179,7 +193,38 @@ pub fn build(project: &Project, name: &str) -> TermPage {
             group.items.push(formula_ref(project, formula));
         }
     }
+    page.problems = problems(project, term);
     page
+}
+
+fn problems(project: &Project, term: Symbol) -> Vec<Problem> {
+    let mut ranges: BTreeMap<FileId, Vec<TextRange>> = BTreeMap::new();
+    for formula in project.index().mentions(term) {
+        ranges.entry(formula.id.file).or_default().push(formula.range);
+    }
+    let mut out = Vec::new();
+    for (file, ranges) in ranges {
+        let path = project.file(file).map_or(String::new(), |f| f.path.display().to_string());
+        for located in project.located_diagnostics(file) {
+            let d = &located.diagnostic;
+            if !ranges.iter().any(|r| r.contains_range(d.range)) {
+                continue;
+            }
+            out.push(Problem {
+                file_id: file.0,
+                file: path.clone(),
+                line: located.line,
+                severity: match d.severity {
+                    Severity::Error => "error",
+                    Severity::Warning => "warning",
+                    Severity::Info | Severity::Off => "info",
+                },
+                code: d.code,
+                message: d.message.clone(),
+            });
+        }
+    }
+    out
 }
 
 pub(crate) fn kind_labels(project: &Project, term: Symbol) -> Vec<&'static str> {

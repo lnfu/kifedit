@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use kifedit_sema::FileId;
 
-use crate::{Diagnostic, FileRole, Snapshot};
+use crate::{Diagnostic, FileRole, LocatedDiagnostic, Snapshot};
 
 /// 停止輸入後多久開始檢查
 pub const DEBOUNCE: Duration = Duration::from_millis(100);
@@ -18,7 +18,7 @@ pub const DEBOUNCE: Duration = Duration::from_millis(100);
 pub struct Update {
     pub file: FileId,
     pub version: u64,
-    pub diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<LocatedDiagnostic>,
 }
 
 enum Message {
@@ -149,7 +149,7 @@ fn check_round(
         sink(Update {
             file: id,
             version: file.version,
-            diagnostics,
+            diagnostics: snapshot.locate(id, diagnostics),
         });
     }
 }

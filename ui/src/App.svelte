@@ -9,16 +9,12 @@
   import TermPage from './lib/TermPage.svelte'
   import Editor from './lib/Editor.svelte'
   import Search from './lib/Search.svelte'
+  import ProblemsPanel from './lib/ProblemsPanel.svelte'
+  import { clearProblems, problems, startProblems } from './lib/problems.svelte'
   import { theme, toggleTheme } from './lib/theme.svelte'
-  import type { FileContent, FormatPlan, Location } from './lib/types'
+  import type { FileContent, FileSummary, FormatPlan, Location } from './lib/types'
 
-  type FileSummary = {
-    id: number
-    path: string
-    role: 'library' | 'editable'
-    formulas: number
-    syntaxErrors: number
-  }
+  startProblems()
 
   type ProjectSummary = {
     name: string
@@ -49,16 +45,68 @@
   ]
   let view = $state('classes')
 
-  const WIDTH_KEY = 'kifedit.sidebarWidth'
-  let sidebarWidth = $state(readWidth())
-
-  function readWidth() {
+  // 版面配置記在 localStorage；無法使用時以預設值顯示
+  function readNumber(key: string, fallback: number) {
     try {
-      return Number(localStorage.getItem(WIDTH_KEY)) || 300
+      return Number(localStorage.getItem(key)) || fallback
     } catch {
-      return 300
+      return fallback
     }
   }
+
+  function store(key: string, value: string) {
+    try {
+      localStorage.setItem(key, value)
+    } catch {}
+  }
+
+  const WIDTH_KEY = 'kifedit.sidebarWidth'
+  const PANEL_KEY = 'kifedit.problemsHeight'
+  const OPEN_KEY = 'kifedit.problemsOpen'
+  let sidebarWidth = $state(readNumber(WIDTH_KEY, 300))
+  let panelHeight = $state(readNumber(PANEL_KEY, 200))
+  let panelOpen = $state(readNumber(OPEN_KEY, 1) === 1)
+
+  function togglePanel() {
+    panelOpen = !panelOpen
+    store(OPEN_KEY, panelOpen ? '1' : '2')
+  }
+
+  function startPanelResize(event: PointerEvent) {
+    const startY = event.clientY
+    const startHeight = panelHeight
+    const move = (e: PointerEvent) => {
+      panelHeight = Math.min(window.innerHeight - 200, Math.max(80, startHeight - (e.clientY - startY)))
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      store(PANEL_KEY, String(panelHeight))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
+  function onKey(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'm') {
+      event.preventDefault()
+      togglePanel()
+    }
+  }
+
+  // 狀態列：editable 檔的錯誤與警告數
+  let counts = $derived.by(() => {
+    let errors = 0
+    let warnings = 0
+    for (const file of summary?.files ?? []) {
+      if (file.role !== 'editable') continue
+      for (const d of problems.get(file.id) ?? []) {
+        if (d.severity === 'error') errors += 1
+        else if (d.severity === 'warning') warnings += 1
+      }
+    }
+    return { errors, warnings }
+  })
 
   function startResize(event: PointerEvent) {
     const startX = event.clientX
@@ -69,9 +117,7 @@
     const stop = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', stop)
-      try {
-        localStorage.setItem(WIDTH_KEY, String(sidebarWidth))
-      } catch {}
+      store(WIDTH_KEY, String(sidebarWidth))
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
@@ -86,6 +132,7 @@
 
     loading = true
     error = null
+    clearProblems()
     try {
       summary = await invoke<ProjectSummary>('open_project', { path })
       tabs = []
@@ -177,6 +224,8 @@
     return path.split('/').pop()
   }
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <div class="app">
   <header>
@@ -293,7 +342,7 @@
             {/key}
           {:else if current?.kind === 'file'}
             {#key current.file}
-              <Editor content={current.file} line={current.line} onEdit={() => pin(active)} />
+              <Editor content={current.file} line={current.line} onEdit={() => pin(active)} onOpen={openLocation} />
             {/key}
           {:else}
             <div class="empty muted">
@@ -301,9 +350,20 @@
             </div>
           {/if}
         </div>
+        {#if panelOpen}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="panel-resizer" onpointerdown={startPanelResize}></div>
+          <div class="panel" style:height="{panelHeight}px">
+            <ProblemsPanel files={summary.files} onOpen={openLocation} onClose={togglePanel} />
+          </div>
+        {/if}
       </main>
     </div>
     <footer>
+      <button class="plain counts" onclick={togglePanel} title="Show or hide the problems (Ctrl+Shift+M)">
+        <span class="error-count">● {counts.errors}</span>
+        <span class="warning-count">▲ {counts.warnings}</span>
+      </button>
       <span>{summary.files.length} files</span>
       <span>{summary.formulaCount.toLocaleString()} formulas</span>
       <span class="right">Load {summary.loadMs.toFixed(0)} ms</span>
@@ -484,5 +544,28 @@
   }
   .right {
     margin-left: auto;
+  }
+  .counts {
+    gap: 10px;
+    font-size: 12px;
+  }
+  .error-count {
+    color: var(--error);
+  }
+  .warning-count {
+    color: var(--warning);
+  }
+  .panel {
+    flex: none;
+    min-height: 0;
+  }
+  .panel-resizer {
+    flex: none;
+    height: 4px;
+    cursor: row-resize;
+    border-top: 1px solid var(--border);
+  }
+  .panel-resizer:hover {
+    background: var(--accent);
   }
 </style>

@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use kifedit_project::{Checker, EditFileError, FileRole, FormEdit, FormValue, Project, Severity, Update};
+use kifedit_project::{
+    Checker, EditFileError, FileRole, FormEdit, FormValue, LocatedDiagnostic, Project, Severity, Update,
+};
 use kifedit_sema::{FileId, FormulaId};
 use kifedit_syntax::{TextEdit, TextRange, apply_edits as apply_text_edits};
 use serde::{Deserialize, Serialize};
@@ -53,11 +55,14 @@ impl From<Update> for DiagnosticsChanged {
     }
 }
 
-impl From<kifedit_project::Diagnostic> for Diagnostic {
-    fn from(d: kifedit_project::Diagnostic) -> Self {
+impl From<LocatedDiagnostic> for Diagnostic {
+    fn from(located: LocatedDiagnostic) -> Self {
+        let d = located.diagnostic;
         Self {
             from: d.range.start().into(),
             to: d.range.end().into(),
+            line: located.line,
+            column: located.column,
             severity: match d.severity {
                 Severity::Error => "error",
                 Severity::Warning => "warning",
@@ -65,8 +70,19 @@ impl From<kifedit_project::Diagnostic> for Diagnostic {
             },
             code: d.code,
             message: d.message,
+            related: located
+                .related
+                .into_iter()
+                .map(|l| RelatedLocation { file: l.file.0, line: l.line })
+                .collect(),
         }
     }
+}
+
+#[derive(Clone, Serialize)]
+pub struct RelatedLocation {
+    file: u32,
+    line: usize,
 }
 
 #[derive(Serialize)]
@@ -141,9 +157,12 @@ pub struct EditInput {
 pub struct Diagnostic {
     from: u32,
     to: u32,
+    line: usize,
+    column: usize,
     severity: &'static str,
     code: &'static str,
     message: String,
+    related: Vec<RelatedLocation>,
 }
 
 #[derive(Serialize)]
@@ -553,17 +572,25 @@ pub fn save_file(file: u32, state: State<'_, AppState>) -> Result<u64, String> {
 
 /// 只有語法錯誤，打字時立即回傳；完整的檢查結果由 diagnostics_changed 事件送出
 fn syntax_errors(project: &Project, file: u32) -> Vec<Diagnostic> {
+    let text = project.text(FileId(file)).unwrap_or_default();
     project
         .parse(FileId(file))
         .map(|p| {
             p.errors
                 .iter()
-                .map(|e| Diagnostic {
-                    from: e.range.start().into(),
-                    to: e.range.end().into(),
-                    severity: "error",
-                    code: e.kind.code(),
-                    message: e.kind.message().to_string(),
+                .map(|e| {
+                    let start = usize::from(e.range.start());
+                    let before = &text[..start];
+                    Diagnostic {
+                        from: e.range.start().into(),
+                        to: e.range.end().into(),
+                        line: before.matches('\n').count() + 1,
+                        column: before.rsplit('\n').next().unwrap_or("").chars().count() + 1,
+                        severity: "error",
+                        code: e.kind.code(),
+                        message: e.kind.message().to_string(),
+                        related: Vec::new(),
+                    }
                 })
                 .collect()
         })
@@ -608,7 +635,7 @@ pub fn file_text(file: u32, state: State<'_, AppState>) -> Result<FileContent, S
         version: project.version(FileId(file)),
         saved_version: session.saved.get(&file).copied().unwrap_or(0),
         errors: project
-            .diagnostics(FileId(file))
+            .located_diagnostics(FileId(file))
             .into_iter()
             .map(Diagnostic::from)
             .collect(),

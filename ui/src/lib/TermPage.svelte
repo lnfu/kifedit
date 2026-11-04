@@ -286,6 +286,20 @@
       </div>
     {/if}
 
+    {#if page.problems.length > 0}
+      <section>
+        <h2>Problems <span class="muted">{page.problems.length}</span></h2>
+        {#each page.problems as p, i (i)}
+          <button class="plain problem" onclick={() => onOpen({ file: p.fileId, line: p.line })}>
+            <span class="severity {p.severity}">{p.severity === 'error' ? '●' : p.severity === 'warning' ? '▲' : 'ⓘ'}</span>
+            <span class="mono muted">{p.code}</span>
+            <span class="text">{p.message}</span>
+            <span class="mono muted">{fileName(p.file)}:{p.line}</span>
+          </button>
+        {/each}
+      </section>
+    {/if}
+
     {#if !page.exists}
       <p class="error">No formula in the project uses this term.</p>
     {:else}
@@ -529,6 +543,31 @@
   }
   .action:hover {
     color: var(--text);
+  }
+  .problem {
+    width: 100%;
+    display: flex;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+    text-align: left;
+  }
+  .problem:hover .text {
+    text-decoration: underline;
+  }
+  .problem .text {
+    flex: 1;
+    min-width: 0;
+  }
+  .severity.error {
+    color: var(--error);
+  }
+  .severity.warning {
+    color: var(--warning);
+  }
+  .severity.info {
+    color: var(--muted);
   }
   .edit {
     padding: 8px;

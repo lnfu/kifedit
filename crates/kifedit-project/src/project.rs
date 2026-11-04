@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use salsa::Setter;
 
 use crate::db::RootDatabase;
+use crate::locate::{LocatedDiagnostic, locate};
 use crate::{Config, EditFileError, ProjectError, QueryError};
 
 // 查詢文字不屬於任何專案檔案
@@ -147,6 +148,12 @@ impl Project {
         with_overrides(&self.config.checks, check_file(&self.db, self.input, file.input))
     }
 
+    /// 與 diagnostics 相同，另外附上行、欄與 related 的位置
+    pub fn located_diagnostics(&self, id: FileId) -> Vec<LocatedDiagnostic> {
+        let text = self.text(id).unwrap_or_default();
+        locate(text, self.diagnostics(id), self.index(), |f| self.text(f))
+    }
+
     /// 唯讀快照，可交給其他執行緒檢查。修改專案時，快照上進行中的查詢會被取消。
     /// 快照不可閒置保留：salsa 寫入前會等所有複本都被丟棄
     pub fn snapshot(&self) -> Snapshot {
@@ -242,6 +249,16 @@ impl Snapshot {
     pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
         let Some(file) = self.files.get(id.0 as usize) else { return Vec::new() };
         with_overrides(&self.checks, check_file(&self.db, self.input, file.input))
+    }
+
+    pub fn text(&self, id: FileId) -> Option<&str> {
+        Some(self.files.get(id.0 as usize)?.input.text(&self.db))
+    }
+
+    /// 為已取得的診斷加上行、欄與 related 的位置
+    pub fn locate(&self, id: FileId, diagnostics: Vec<Diagnostic>) -> Vec<LocatedDiagnostic> {
+        let text = self.text(id).unwrap_or_default();
+        locate(text, diagnostics, project_index(&self.db, self.input), |f| self.text(f))
     }
 }
 
