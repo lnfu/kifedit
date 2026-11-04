@@ -6,7 +6,7 @@
   import { setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
   import { forceParsing } from '@codemirror/language'
   import { kif } from './kif'
-  import type { Diagnostic, EditOutcome, FileContent } from './types'
+  import type { Diagnostic, EditOutcome, FileContent, FileState } from './types'
 
   let { content, line }: { content: FileContent; line: number } = $props()
 
@@ -104,20 +104,27 @@
     })
   }
 
-  // 復原與重做由後端管理，表單與編輯器的修改共用同一份歷史（§8.5）
-  async function stepHistory(command: 'undo' | 'redo') {
+  // 復原、重做與格式化由後端執行，再把結果套到編輯器；與表單共用同一份歷史（§8.5）
+  async function runBackend(command: string, args: Record<string, unknown> = {}) {
     if (content.readOnly) return
     const file = content.id
     await queue
     try {
-      const result = await invoke<{ version: number; text: string; errors: Diagnostic[] } | null>(command, { file })
+      const result = await invoke<FileState | null>(command, { file, ...args })
       if (!result || file !== content.id) return
       replaceText(result.text)
       version = result.version
       showErrors(result.errors)
+      message = null
     } catch (e) {
       message = String(e)
     }
+  }
+
+  function formatFormula() {
+    if (!view) return
+    const offset = byteOffset(view.state.doc, view.state.selection.main.head)
+    runBackend('format_file', { offset })
   }
 
   async function save() {
@@ -145,9 +152,11 @@
         Prec.highest(
           keymap.of([
             { key: 'Mod-s', preventDefault: true, run: () => (save(), true) },
-            { key: 'Mod-z', preventDefault: true, run: () => (stepHistory('undo'), true) },
-            { key: 'Mod-y', preventDefault: true, run: () => (stepHistory('redo'), true) },
-            { key: 'Mod-Shift-z', preventDefault: true, run: () => (stepHistory('redo'), true) },
+            { key: 'Mod-z', preventDefault: true, run: () => (runBackend('undo'), true) },
+            { key: 'Mod-y', preventDefault: true, run: () => (runBackend('redo'), true) },
+            { key: 'Mod-Shift-z', preventDefault: true, run: () => (runBackend('redo'), true) },
+            { key: 'Shift-Alt-f', preventDefault: true, run: () => (runBackend('format_file'), true) },
+            { key: 'Mod-k Mod-f', preventDefault: true, run: () => (formatFormula(), true) },
           ]),
         ),
         basicSetup,
@@ -193,6 +202,8 @@
     <span class="badge">read-only</span>
   {:else}
     <button onclick={save} disabled={version === savedVersion}>Save</button>
+    <button onclick={formatFormula} title="Ctrl+K Ctrl+F">Format Formula</button>
+    <button onclick={() => runBackend('format_file')} title="Shift+Alt+F">Format File</button>
     {#if version !== savedVersion}
       <span class="badge">not saved</span>
     {/if}

@@ -96,3 +96,18 @@ export type TermPageData = {
   asArgument: Group
   inRules: Group
 }
+
+export type NameHit = { name: string; kinds: string[] }
+
+export type TextHit = { term: string | null; text: string; formula: FormulaRef }
+
+export type QueryOutcome =
+  | { status: 'answers'; columns: string[]; rows: { values: string[]; support: FormulaRef[] }[] }
+  | { status: 'needsProver'; message: string }
+
+export type FileState = { version: number; text: string; errors: Diagnostic[] }
+
+export type FormatPlan = {
+  changes: { file: number; path: string; preview: Preview }[]
+  skipped: string[]
+}

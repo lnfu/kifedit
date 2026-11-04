@@ -1,5 +1,7 @@
 mod commands;
+mod format;
 mod history;
+mod search;
 mod term_page;
 mod tree;
 
@@ -18,7 +20,13 @@ pub fn run() {
             commands::undo,
             commands::redo,
             commands::preview_form,
-            commands::apply_form
+            commands::apply_form,
+            commands::search_names,
+            commands::search_text,
+            commands::run_query,
+            commands::format_file,
+            commands::format_project_preview,
+            commands::format_project
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

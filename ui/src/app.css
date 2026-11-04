@@ -121,3 +121,9 @@ td {
 .path {
   font-family: ui-monospace, monospace;
 }
+
+.plan {
+  border: 1px solid var(--border);
+  padding: 8px;
+  margin-bottom: 12px;
+}

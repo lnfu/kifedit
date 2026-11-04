@@ -4,7 +4,8 @@
   import Tree from './lib/Tree.svelte'
   import TermPage from './lib/TermPage.svelte'
   import Editor from './lib/Editor.svelte'
-  import type { FileContent, Location } from './lib/types'
+  import Search from './lib/Search.svelte'
+  import type { FileContent, FormatPlan, Location } from './lib/types'
 
   type FileSummary = {
     id: number
@@ -110,6 +111,30 @@
     }
   }
 
+  // Format Project：先預覽會變動的檔案，確認後才套用（§8.6）
+  let plan = $state<FormatPlan | null>(null)
+
+  async function previewFormat() {
+    error = null
+    try {
+      plan = await invoke<FormatPlan>('format_project_preview')
+    } catch (e) {
+      error = String(e)
+    }
+  }
+
+  async function applyFormat() {
+    try {
+      const changed = await invoke<{ file: number; version: number }[]>('format_project')
+      plan = null
+      if (file && changed.some((c) => c.file === file!.id)) {
+        file = await invoke<FileContent>('file_text', { file: file.id })
+      }
+    } catch (e) {
+      error = String(e)
+    }
+  }
+
   function back() {
     selected = history.at(-1) ?? null
     history = history.slice(0, -1)
@@ -123,8 +148,34 @@
     </button>
     {#if summary}
       <span class="project">{summary.name}</span>
+      <Search onNavigate={navigate} onOpen={openLocation} />
+      <button onclick={previewFormat}>Format Project</button>
     {/if}
   </header>
+
+  {#if plan}
+    <div class="plan">
+      {#if plan.changes.length === 0}
+        <p>All editable files are formatted.</p>
+      {:else}
+        <p>Files that will change: {plan.changes.length}</p>
+        <ul>
+          {#each plan.changes as c (c.file)}
+            <li>
+              {c.path}: from line {c.preview.line}, {c.preview.removed.length} lines change to {c.preview.added.length} lines
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#each plan.skipped as path (path)}
+        <p class="error">The file has syntax errors. It is not formatted: {path}</p>
+      {/each}
+      {#if plan.changes.length > 0}
+        <button onclick={applyFormat}>Apply</button>
+      {/if}
+      <button onclick={() => (plan = null)}>Close</button>
+    </div>
+  {/if}
 
   {#if error}
     <p class="error">{error}</p>

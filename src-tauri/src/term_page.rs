@@ -94,18 +94,7 @@ pub fn build(project: &Project, name: &str) -> TermPage {
     };
 
     page.exists = index.mentions(term).next().is_some();
-    let kinds = taxonomy.kinds(term);
-    for (flag, label) in [
-        (kinds.class, "class"),
-        (kinds.relation, "relation"),
-        (kinds.function, "function"),
-        (kinds.attribute, "attribute"),
-        (kinds.individual, "individual"),
-    ] {
-        if flag {
-            page.kinds.push(label);
-        }
-    }
+    page.kinds = kind_labels(project, term);
 
     // Documentation：documentation 的詞彙是第 1 個參數，termFormat 是第 2 個
     let mut shown = HashSet::new();
@@ -193,7 +182,21 @@ pub fn build(project: &Project, name: &str) -> TermPage {
     page
 }
 
-fn formula_ref(project: &Project, formula: &Formula) -> FormulaRef {
+pub(crate) fn kind_labels(project: &Project, term: Symbol) -> Vec<&'static str> {
+    let kinds = project.taxonomy().kinds(term);
+    [
+        (kinds.class, "class"),
+        (kinds.relation, "relation"),
+        (kinds.function, "function"),
+        (kinds.attribute, "attribute"),
+        (kinds.individual, "individual"),
+    ]
+    .into_iter()
+    .filter_map(|(flag, label)| flag.then_some(label))
+    .collect()
+}
+
+pub(crate) fn formula_ref(project: &Project, formula: &Formula) -> FormulaRef {
     let interner = project.interner();
     let file = project.file(formula.id.file);
     let text = file.map_or("", |f| f.document.text());

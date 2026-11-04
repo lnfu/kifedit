@@ -309,7 +309,10 @@ pub fn preview_form(input: FormInput, state: State<'_, AppState>) -> Result<Prev
         .text();
     let mut after = before.to_string();
     apply_text_edits(&mut after, &edits).map_err(|e| e.to_string())?;
+    Ok(line_diff(before, &after))
+}
 
+fn line_diff(before: &str, after: &str) -> Preview {
     let b: Vec<&str> = before.split('\n').collect();
     let a: Vec<&str> = after.split('\n').collect();
     let prefix = b.iter().zip(&a).take_while(|(x, y)| x == y).count();
@@ -322,11 +325,11 @@ pub fn preview_form(input: FormInput, state: State<'_, AppState>) -> Result<Prev
         .take_while(|(x, y)| x == y)
         .count();
     let lines = |v: &[&str]| v.iter().map(|s| s.to_string()).collect();
-    Ok(Preview {
+    Preview {
         line: prefix + 1,
         removed: lines(&b[prefix..b.len() - suffix]),
         added: lines(&a[prefix..a.len() - suffix]),
-    })
+    }
 }
 
 #[derive(Serialize)]
@@ -338,28 +341,137 @@ pub struct FormApplied {
 #[tauri::command]
 pub fn apply_form(input: FormInput, state: State<'_, AppState>) -> Result<FormApplied, String> {
     let mut session = state.session.lock().unwrap();
-    let Session {
-        project,
-        versions,
-        histories,
-        ..
-    } = &mut *session;
-    let project = project.as_mut().ok_or(NO_PROJECT)?;
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
     let (file, edit) = input.into_edit();
     let edits = project.preview_form(&edit).map_err(|e| e.to_string())?;
+    let version = apply_recorded(&mut session, file, edits, Source::Form)?;
+    Ok(FormApplied { file, version })
+}
+
+// 套用一組修改並記入復原歷史，回傳新的版本號
+fn apply_recorded(
+    session: &mut Session,
+    file: u32,
+    edits: Vec<TextEdit>,
+    source: Source,
+) -> Result<u64, String> {
+    let project = session.project.as_mut().ok_or(NO_PROJECT)?;
     let inverse = project
         .edit(FileId(file), &edits)
         .map_err(|e| e.to_string())?;
-    histories
+    session
+        .histories
         .entry(file)
         .or_default()
-        .record(Source::Form, edits, inverse);
-    let version = versions.entry(file).or_insert(0);
+        .record(source, edits, inverse);
+    let version = session.versions.entry(file).or_insert(0);
     *version += 1;
-    Ok(FormApplied {
-        file,
-        version: *version,
-    })
+    Ok(*version)
+}
+
+#[tauri::command]
+pub fn search_names(query: String, state: State<'_, AppState>) -> Result<Vec<crate::search::NameHit>, String> {
+    let session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    Ok(crate::search::names(project, &query))
+}
+
+#[tauri::command]
+pub fn search_text(query: String, state: State<'_, AppState>) -> Result<Vec<crate::search::TextHit>, String> {
+    let session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    Ok(crate::search::text(project, &query))
+}
+
+#[tauri::command]
+pub fn run_query(query: String, state: State<'_, AppState>) -> Result<crate::search::QueryOutcome, String> {
+    let session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    crate::search::query(project, &query)
+}
+
+/// 格式化整個檔案；有 offset 時只格式化該位置的頂層公式。沒有變動時回傳 None
+#[tauri::command]
+pub fn format_file(file: u32, offset: Option<u32>, state: State<'_, AppState>) -> Result<Option<FileState>, String> {
+    let mut session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    let edit = match offset {
+        Some(offset) => crate::format::formula_edit(project, FileId(file), offset)?,
+        None => crate::format::file_edit(project, FileId(file))?,
+    };
+    let Some(edit) = edit else { return Ok(None) };
+    apply_recorded(&mut session, file, vec![edit], Source::Form)?;
+    file_state(&session, file).map(Some)
+}
+
+#[derive(Serialize)]
+pub struct FormatChange {
+    file: u32,
+    path: String,
+    preview: Preview,
+}
+
+#[derive(Serialize)]
+pub struct FormatPlan {
+    changes: Vec<FormatChange>,
+    skipped: Vec<String>, // 有語法錯誤而不格式化的檔案
+}
+
+/// Format Project 的預覽：只包含 editable 檔案（§8.6）
+#[tauri::command]
+pub fn format_project_preview(state: State<'_, AppState>) -> Result<FormatPlan, String> {
+    let session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    let mut plan = FormatPlan {
+        changes: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for source in project.files().iter().filter(|f| f.role == FileRole::Editable) {
+        let path = source.path.display().to_string();
+        match crate::format::file_edit(project, source.id) {
+            Ok(Some(edit)) => {
+                let before = source.document.text();
+                let mut after = before.to_string();
+                apply_text_edits(&mut after, &[edit]).map_err(|e| e.to_string())?;
+                plan.changes.push(FormatChange {
+                    file: source.id.0,
+                    path,
+                    preview: line_diff(before, &after),
+                });
+            }
+            Ok(None) => {}
+            Err(_) => plan.skipped.push(path),
+        }
+    }
+    Ok(plan)
+}
+
+#[derive(Serialize)]
+pub struct FileVersion {
+    file: u32,
+    version: u64,
+}
+
+#[tauri::command]
+pub fn format_project(state: State<'_, AppState>) -> Result<Vec<FileVersion>, String> {
+    let mut session = state.session.lock().unwrap();
+    let project = session.project.as_ref().ok_or(NO_PROJECT)?;
+    let edits: Vec<(u32, TextEdit)> = project
+        .files()
+        .iter()
+        .filter(|f| f.role == FileRole::Editable)
+        .filter_map(|f| match crate::format::file_edit(project, f.id) {
+            Ok(Some(edit)) => Some((f.id.0, edit)),
+            _ => None,
+        })
+        .collect();
+    edits
+        .into_iter()
+        .map(|(file, edit)| {
+            let version = apply_recorded(&mut session, file, vec![edit], Source::Form)?;
+            Ok(FileVersion { file, version })
+        })
+        .collect()
 }
 
 #[tauri::command]
