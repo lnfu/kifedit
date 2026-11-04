@@ -4,7 +4,7 @@ use crate::SyntaxKind::*;
 use crate::lexer::{Token, lex};
 use crate::{SyntaxError, SyntaxErrorKind, SyntaxNode};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parse {
     pub green: GreenNode,
     pub errors: Vec<SyntaxError>,

@@ -110,10 +110,8 @@ pub fn apply_edits(
 
     let conflict = |project: &Project, version: u64| -> Result<EditOutcome, String> {
         let text = project
-            .file(FileId(file))
+            .text(FileId(file))
             .ok_or("There is no file with this ID.")?
-            .document
-            .text()
             .to_string();
         Ok(EditOutcome::Conflict { version, text })
     };
@@ -149,12 +147,12 @@ pub struct FileState {
 
 fn file_state(session: &Session, file: u32) -> Result<FileState, String> {
     let project = session.project.as_ref().ok_or(NO_PROJECT)?;
-    let source = project
-        .file(FileId(file))
+    let text = project
+        .text(FileId(file))
         .ok_or("There is no file with this ID.")?;
     Ok(FileState {
         version: session.versions.get(&file).copied().unwrap_or(0),
-        text: source.document.text().to_string(),
+        text: text.to_string(),
         errors: diagnostics(project, file),
     })
 }
@@ -303,10 +301,8 @@ pub fn preview_form(input: FormInput, state: State<'_, AppState>) -> Result<Prev
     let (file, edit) = input.into_edit();
     let edits = project.preview_form(&edit).map_err(|e| e.to_string())?;
     let before = project
-        .file(FileId(file))
-        .ok_or("There is no file with this ID.")?
-        .document
-        .text();
+        .text(FileId(file))
+        .ok_or("There is no file with this ID.")?;
     let mut after = before.to_string();
     apply_text_edits(&mut after, &edits).map_err(|e| e.to_string())?;
     Ok(line_diff(before, &after))
@@ -430,7 +426,7 @@ pub fn format_project_preview(state: State<'_, AppState>) -> Result<FormatPlan, 
         let path = source.path.display().to_string();
         match crate::format::file_edit(project, source.id) {
             Ok(Some(edit)) => {
-                let before = source.document.text();
+                let before = project.text(source.id).unwrap_or_default();
                 let mut after = before.to_string();
                 apply_text_edits(&mut after, &[edit]).map_err(|e| e.to_string())?;
                 plan.changes.push(FormatChange {
@@ -498,11 +494,9 @@ pub fn save_file(file: u32, state: State<'_, AppState>) -> Result<u64, String> {
 
 fn diagnostics(project: &Project, file: u32) -> Vec<Diagnostic> {
     project
-        .file(FileId(file))
-        .map(|f| {
-            f.document
-                .parse()
-                .errors
+        .parse(FileId(file))
+        .map(|p| {
+            p.errors
                 .iter()
                 .map(|e| Diagnostic {
                     from: e.range.start().into(),
@@ -549,7 +543,7 @@ pub fn file_text(file: u32, state: State<'_, AppState>) -> Result<FileContent, S
         id: file,
         path: source.path.display().to_string(),
         read_only: source.role == FileRole::Library,
-        text: source.document.text().to_string(),
+        text: project.text(FileId(file)).unwrap_or_default().to_string(),
         version: session.versions.get(&file).copied().unwrap_or(0),
         saved_version: session.saved.get(&file).copied().unwrap_or(0),
         errors: diagnostics(project, file),
@@ -578,7 +572,7 @@ fn summarize(project: &Project, load_ms: f64) -> ProjectSummary {
                 .index()
                 .file(file.id)
                 .map_or(0, |f| f.formulas().len()),
-            syntax_errors: file.document.parse().errors.len(),
+            syntax_errors: project.parse(file.id).map_or(0, |p| p.errors.len()),
         })
         .collect();
     ProjectSummary {

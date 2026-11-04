@@ -52,7 +52,7 @@ fn edit_updates_index_and_taxonomy() {
     );
 
     project.edit(lab, &inverse).unwrap();
-    assert_eq!(project.file(lab).unwrap().document.text(), EDITABLE);
+    assert_eq!(project.text(lab).unwrap(), EDITABLE);
     assert_eq!(
         project.taxonomy().instance_of(name(&project, "HeadCamera")),
         [name(&project, "Camera")]
@@ -100,7 +100,7 @@ fn missing_file_and_duplicate_file_are_errors() {
 #[test]
 fn opens_the_example_project_with_sumo() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-    let lab = data.join("fixtures/stretch4_lab.kif");
+    let lab = data.join("fixtures/mm.kif");
     if !lab.is_file() {
         eprintln!("Skip the test. Cannot find {}.", lab.display());
         return;
@@ -111,7 +111,7 @@ fn opens_the_example_project_with_sumo() {
     fs::write(
         &config,
         format!(
-            "[project]\nname = \"stretch4-lab\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
+            "[project]\nname = \"mm\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
             library[0], library[1], lab
         ),
     )
@@ -136,4 +136,32 @@ fn opens_the_example_project_with_sumo() {
         project.files().len(),
         project.index().formula_count()
     );
+}
+
+#[test]
+fn checks_section_changes_or_removes_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = "library = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n";
+    let codes = |checks: &str| -> Vec<String> {
+        let config = write_project(dir.path(), &format!("{files}\n[checks]\n{checks}"));
+        let project = Project::open(&config).unwrap();
+        project
+            .diagnostics(FileId(1))
+            .iter()
+            .map(|d| format!("{} {:?}", d.code, d.severity))
+            .collect()
+    };
+    // lab.kif：instance 未宣告（E002）、HeadCamera 沒有說明（W002）、沒有被引用（I001）
+    assert_eq!(codes(""), ["I001 Info", "W002 Warning", "E002 Error"]);
+    assert_eq!(codes("W002 = \"off\"\nE002 = \"warning\""), ["I001 Info", "E002 Warning"]);
+}
+
+#[test]
+fn unknown_check_code_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = write_project(dir.path(), "editable = [\"lab.kif\"]\n\n[checks]\nW999 = \"off\"\n");
+    assert!(matches!(
+        Project::open(&config),
+        Err(ProjectError::UnknownCheck { code, .. }) if code == "W999"
+    ));
 }

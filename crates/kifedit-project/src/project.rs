@@ -1,12 +1,16 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use kifedit_reason::{QueryResult, Taxonomy, evaluate};
-use kifedit_sema::{FileId, FileIndex, Index, Interner, lower_file};
-use kifedit_syntax::parser::parse;
-use kifedit_syntax::{Document, TextEdit};
+use kifedit_check::{Diagnostic, Severity, check_file};
+use kifedit_db::{File, ProjectInput};
+use kifedit_reason::{QueryResult, Taxonomy, evaluate, project_taxonomy};
+use kifedit_sema::{FileId, Index, Interner, SemaDb, file_index, lower_file, project_index};
+use kifedit_syntax::parser::{Parse, parse};
+use kifedit_syntax::{TextEdit, apply_edits};
 use rayon::prelude::*;
+use salsa::Setter;
 
+use crate::db::RootDatabase;
 use crate::{Config, EditFileError, ProjectError, QueryError};
 
 // 查詢文字不屬於任何專案檔案
@@ -23,17 +27,16 @@ pub struct SourceFile {
     pub id: FileId,
     pub path: PathBuf,
     pub role: FileRole,
-    pub document: Document,
+    pub input: File, // 文字存在 salsa 資料庫，以 Project::text 讀取
 }
 
 #[derive(Debug)]
 pub struct Project {
     root: PathBuf,
     config: Config,
+    pub(crate) db: RootDatabase,
     pub(crate) files: Vec<SourceFile>,
-    pub(crate) interner: Interner,
-    pub(crate) index: Index,
-    taxonomy: Taxonomy,
+    input: ProjectInput,
 }
 
 impl Project {
@@ -55,46 +58,42 @@ impl Project {
             }
         }
 
-        // 每個檔案一個工作：讀檔、解析、建索引（§15.2 策略 1）
-        let interner = Interner::default();
-        let loaded: Vec<(SourceFile, FileIndex)> = entries
-            .into_par_iter()
-            .enumerate()
-            .map(|(i, (role, path))| {
-                let id = FileId(i as u32);
-                let text = std::fs::read_to_string(&path).map_err(|source| ProjectError::Read {
+        let texts: Vec<String> = entries
+            .par_iter()
+            .map(|(_, path)| {
+                std::fs::read_to_string(path).map_err(|source| ProjectError::Read {
                     path: path.clone(),
                     source,
-                })?;
-                let document = Document::new(text);
-                let file_index = FileIndex::build(id, &document.parse().syntax(), &interner);
-                Ok((
-                    SourceFile {
-                        id,
-                        path,
-                        role,
-                        document,
-                    },
-                    file_index,
-                ))
+                })
             })
             .collect::<Result<_, ProjectError>>()?;
 
-        let mut index = Index::default();
-        let mut files = Vec::with_capacity(loaded.len());
-        for (file, file_index) in loaded {
-            index.insert_file(file.id, file_index);
-            files.push(file);
-        }
-        let taxonomy = Taxonomy::build(&index, &interner);
+        let db = RootDatabase::default();
+        let files: Vec<SourceFile> = entries
+            .into_iter()
+            .zip(texts)
+            .enumerate()
+            .map(|(i, ((role, path), text))| SourceFile {
+                id: FileId(i as u32),
+                path,
+                role,
+                input: File::new(&db, FileId(i as u32), text),
+            })
+            .collect();
+        let input = ProjectInput::new(&db, files.iter().map(|f| f.input).collect());
+
+        // 每個檔案一個工作：解析、建索引（§15.2 策略 1）；每個執行緒持有資料庫的複本
+        files.par_iter().for_each_with(db.clone(), |db, file| {
+            file_index(&*db, file.input);
+        });
+        project_taxonomy(&db, input);
 
         Ok(Self {
             root,
             config,
+            db,
             files,
-            interner,
-            index,
-            taxonomy,
+            input,
         })
     }
 
@@ -114,33 +113,59 @@ impl Project {
         self.files.get(id.0 as usize)
     }
 
+    pub fn text(&self, id: FileId) -> Option<&str> {
+        Some(self.file(id)?.input.text(&self.db))
+    }
+
+    pub fn parse(&self, id: FileId) -> Option<&Parse> {
+        Some(kifedit_db::parse(&self.db, self.file(id)?.input))
+    }
+
     pub fn interner(&self) -> &Interner {
-        &self.interner
+        self.db.interner()
     }
 
     pub fn index(&self) -> &Index {
-        &self.index
+        project_index(&self.db, self.input)
     }
 
     pub fn taxonomy(&self) -> &Taxonomy {
-        &self.taxonomy
+        project_taxonomy(&self.db, self.input)
     }
 
-    /// 套用修改，更新該檔的索引並重建分類，回傳反向修改
+    /// 一個檔案的靜態檢查結果（§7），已套用 `[checks]` 的嚴重度覆寫；只重查受修改影響的部分
+    pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
+        let Some(file) = self.file(id) else { return Vec::new() };
+        check_file(&self.db, self.input, file.input)
+            .iter()
+            .filter_map(|d| {
+                let severity = self.config.checks.get(d.code).copied().unwrap_or(d.severity);
+                (severity != Severity::Off).then(|| Diagnostic { severity, ..d.clone() })
+            })
+            .collect()
+    }
+
+    /// 平行檢查所有檔案，結果留在資料庫中；之後的 diagnostics 直接取用
+    pub fn check_all(&self) {
+        let project = self.input;
+        let inputs: Vec<File> = self.files.iter().map(|f| f.input).collect();
+        inputs.into_par_iter().for_each_with(self.db.clone(), |db, file| {
+            check_file(&*db, project, file);
+        });
+    }
+
+    /// 套用修改，回傳反向修改；索引與分類由 salsa 查詢在下次讀取時更新
     pub fn edit(&mut self, id: FileId, edits: &[TextEdit]) -> Result<Vec<TextEdit>, EditFileError> {
-        let file = self
-            .files
-            .get_mut(id.0 as usize)
-            .ok_or(EditFileError::UnknownFile)?;
+        let file = self.file(id).ok_or(EditFileError::UnknownFile)?;
         if file.role == FileRole::Library {
             return Err(EditFileError::LibraryFile {
                 path: file.path.clone(),
             });
         }
-        let inverse = file.document.apply(edits)?;
-        let file_index = FileIndex::build(id, &file.document.parse().syntax(), &self.interner);
-        self.index.insert_file(id, file_index);
-        self.taxonomy = Taxonomy::build(&self.index, &self.interner);
+        let input = file.input;
+        let mut text = input.text(&self.db).clone();
+        let inverse = apply_edits(&mut text, edits)?;
+        input.set_text(&mut self.db).to(text);
         Ok(inverse)
     }
 
@@ -150,15 +175,15 @@ impl Project {
         if !parsed.errors.is_empty() {
             return Err(QueryError::Syntax);
         }
-        let formulas = lower_file(QUERY_FILE, &parsed.syntax(), &self.interner);
+        let formulas = lower_file(QUERY_FILE, &parsed.syntax(), self.interner());
         let [formula] = formulas.as_slice() else {
             return Err(QueryError::NotOneQuery);
         };
         Ok(evaluate(
             &formula.term,
-            &self.index,
-            &self.taxonomy,
-            &self.interner,
+            self.index(),
+            self.taxonomy(),
+            self.interner(),
             limit,
         ))
     }
@@ -167,6 +192,6 @@ impl Project {
         let file = self.file(id).ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "There is no file with this ID.")
         })?;
-        std::fs::write(&file.path, file.document.text())
+        std::fs::write(&file.path, file.input.text(&self.db))
     }
 }

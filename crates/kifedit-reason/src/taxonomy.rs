@@ -1,4 +1,4 @@
-use kifedit_sema::{Index, Interner, Symbol, Term};
+use kifedit_sema::{Formula, Index, Interner, Symbol, Term};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::Hierarchy;
@@ -13,7 +13,7 @@ pub struct Kinds {
 }
 
 // SUMO 頂層的固定類別
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct TopClasses {
     set_or_class: Option<Symbol>,
     relation: Option<Symbol>,
@@ -21,7 +21,39 @@ struct TopClasses {
     attribute: Option<Symbol>,
 }
 
-#[derive(Debug, Default)]
+/// 一個檔案中的分類事實，依檔案中的順序，不含位置。
+/// 修改不影響分類的公式時，這份投影不變，分類不必重建
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TaxonomyFacts {
+    subclass: Vec<(Symbol, Symbol)>,
+    subrelation: Vec<(Symbol, Symbol)>,
+    sub_attribute: Vec<(Symbol, Symbol)>,
+    instance: Vec<(Symbol, Symbol)>,
+}
+
+impl TaxonomyFacts {
+    pub fn collect<'a>(formulas: impl IntoIterator<Item = &'a Formula>, interner: &Interner) -> Self {
+        let [subclass, subrelation, sub_attribute, instance] =
+            ["subclass", "subrelation", "subAttribute", "instance"].map(|r| interner.get(r));
+        let mut facts = Self::default();
+        for formula in formulas {
+            let Term::App(head, _) = &formula.term else { continue };
+            let Term::Symbol(relation) = head.as_ref() else { continue };
+            let Some(pair) = symbol_pair(&formula.term) else { continue };
+            let list = match Some(*relation) {
+                r if r == subclass => &mut facts.subclass,
+                r if r == subrelation => &mut facts.subrelation,
+                r if r == sub_attribute => &mut facts.sub_attribute,
+                r if r == instance => &mut facts.instance,
+                _ => continue,
+            };
+            list.push(pair);
+        }
+        facts
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Taxonomy {
     pub subclass: Hierarchy,
     pub subrelation: Hierarchy,
@@ -33,20 +65,18 @@ pub struct Taxonomy {
 
 impl Taxonomy {
     pub fn build(index: &Index, interner: &Interner) -> Self {
-        let binary_facts = |relation: &str| -> Vec<(Symbol, Symbol)> {
-            let Some(relation) = interner.get(relation) else {
-                return Vec::new();
-            };
-            index
-                .facts_of(relation)
-                .filter_map(|f| symbol_pair(&f.term))
-                .collect()
-        };
+        Self::from_facts(&[TaxonomyFacts::collect(index.formulas(), interner)], interner)
+    }
 
+    /// 各檔的分類事實依 FileId 順序串接，結果與 build 相同
+    pub fn from_facts(files: &[TaxonomyFacts], interner: &Interner) -> Self {
+        let all = |select: fn(&TaxonomyFacts) -> &Vec<(Symbol, Symbol)>| {
+            files.iter().flat_map(move |f| select(f).iter().copied())
+        };
         let mut taxonomy = Self {
-            subclass: Hierarchy::from_edges(binary_facts("subclass")),
-            subrelation: Hierarchy::from_edges(binary_facts("subrelation")),
-            sub_attribute: Hierarchy::from_edges(binary_facts("subAttribute")),
+            subclass: Hierarchy::from_edges(all(|f| &f.subclass)),
+            subrelation: Hierarchy::from_edges(all(|f| &f.subrelation)),
+            sub_attribute: Hierarchy::from_edges(all(|f| &f.sub_attribute)),
             top: TopClasses {
                 set_or_class: interner.get("SetOrClass"),
                 relation: interner.get("Relation"),
@@ -55,7 +85,7 @@ impl Taxonomy {
             },
             ..Self::default()
         };
-        for (individual, class) in binary_facts("instance") {
+        for (individual, class) in all(|f| &f.instance) {
             push_unique(taxonomy.instance_of.entry(individual).or_default(), class);
             push_unique(taxonomy.instances.entry(class).or_default(), individual);
         }

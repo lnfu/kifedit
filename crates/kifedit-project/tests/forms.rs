@@ -18,7 +18,7 @@ fn project_with(dir: &Path, library: &str, editable: &str) -> Project {
 
 fn apply(project: &mut Project, edit: FormEdit) -> String {
     project.apply_form(&edit).unwrap();
-    project.file(FileId(1)).unwrap().document.text().to_string()
+    project.text(FileId(1)).unwrap().to_string()
 }
 
 fn add(relation: &str, args: &[&str]) -> FormEdit {

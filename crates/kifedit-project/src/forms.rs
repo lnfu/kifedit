@@ -127,7 +127,7 @@ impl Project {
             FormEdit::DeleteFact { formula } => {
                 let (file, node) = self.form_node(*formula)?;
                 Ok(vec![TextEdit::delete(delete_range(
-                    file.document.text(),
+                    file.input.text(&self.db),
                     node.text_range(),
                 ))])
             }
@@ -171,10 +171,8 @@ impl Project {
 
     fn form_node(&self, id: FormulaId) -> Result<(&SourceFile, SyntaxNode), FormError> {
         let file = self.editable_file(id.file)?;
-        let formula = self.index.formula(id).ok_or(FormError::UnknownFormula)?;
-        let node = file
-            .document
-            .parse()
+        let formula = self.index().formula(id).ok_or(FormError::UnknownFormula)?;
+        let node = kifedit_db::parse(&self.db, file.input)
             .syntax()
             .children()
             .find(|n| n.text_range() == formula.range)
@@ -193,18 +191,18 @@ impl Project {
         }
         let fact = format!("({})", parts.join(" "));
 
-        let text = file.document.text();
+        let text = file.input.text(&self.db);
         let newline = if uses_crlf(text) { "\r\n" } else { "\n" };
         let subject = match args.get(subject_position(relation)) {
-            Some(FormValue::Symbol(s)) => self.interner.get(s),
+            Some(FormValue::Symbol(s)) => self.interner().get(s),
             _ => None,
         };
         let anchor = subject.and_then(|subject| {
-            let formulas = self.index.file(id)?.formulas();
+            let formulas = self.index().file(id)?.formulas();
             formulas
                 .iter()
                 .rev()
-                .find(|f| subject_of(&f.term, &self.interner) == Some(subject))
+                .find(|f| subject_of(&f.term, self.interner()) == Some(subject))
                 .map(|f| f.range.end())
         });
 

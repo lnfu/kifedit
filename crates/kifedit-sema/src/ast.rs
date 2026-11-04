@@ -2,8 +2,7 @@ use kifedit_syntax::TextRange;
 
 use crate::Symbol;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FileId(pub u32);
+pub use kifedit_db::FileId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FormulaId {

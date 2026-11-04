@@ -159,7 +159,7 @@ fn file_children(project: &Project, node: Option<&str>) -> Vec<TreeNode> {
                 .collect()
         }
         ("group", Some(group)) => {
-            let text = project.file(file).map_or("", |f| f.document.text());
+            let text = project.text(file).unwrap_or_default();
             formulas
                 .iter()
                 .filter(|f| group_of(&f.term) == group)

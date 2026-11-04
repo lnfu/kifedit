@@ -16,6 +16,9 @@ pub enum ProjectError {
 
     #[error("The file {} occurs more than one time in [files].", path.display())]
     DuplicateFile { path: PathBuf },
+
+    #[error("The project file {} names a check that does not exist in [checks]: {code}", path.display())]
+    UnknownCheck { path: PathBuf, code: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

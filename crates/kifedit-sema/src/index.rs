@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use kifedit_syntax::SyntaxNode;
 use rustc_hash::FxHashMap;
 
 use crate::{FileId, Formula, FormulaId, Interner, Symbol, Term, lower_file};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct FileIndex {
     formulas: Vec<Formula>,
     mentions: FxHashMap<Symbol, Vec<u32>>,
@@ -50,6 +51,11 @@ impl FileIndex {
         &self.formulas
     }
 
+    /// 檔案中提及的一般符號（不含變數、字串、數字與邏輯運算子）
+    pub fn symbols(&self) -> impl Iterator<Item = Symbol> + '_ {
+        self.mentions.keys().copied()
+    }
+
     fn select<'a>(&'a self, indices: Option<&'a Vec<u32>>) -> impl Iterator<Item = &'a Formula> {
         indices
             .into_iter()
@@ -72,18 +78,25 @@ fn collect_symbols(term: &Term, out: &mut Vec<Symbol>) {
     }
 }
 
-#[derive(Debug, Default)]
+// FileIndex 實作 Eq，Arc 比較時先比指標，未改變的檔案不必逐項比較
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Index {
-    files: BTreeMap<FileId, FileIndex>,
+    files: BTreeMap<FileId, Arc<FileIndex>>,
 }
 
 impl Index {
+    pub fn from_files(files: impl IntoIterator<Item = (FileId, Arc<FileIndex>)>) -> Self {
+        Self {
+            files: files.into_iter().collect(),
+        }
+    }
+
     pub fn set_file(&mut self, file: FileId, root: &SyntaxNode, interner: &Interner) {
         self.insert_file(file, FileIndex::build(file, root, interner));
     }
 
     pub fn insert_file(&mut self, file: FileId, index: FileIndex) {
-        self.files.insert(file, index);
+        self.files.insert(file, Arc::new(index));
     }
 
     pub fn remove_file(&mut self, file: FileId) {
@@ -91,7 +104,7 @@ impl Index {
     }
 
     pub fn file(&self, file: FileId) -> Option<&FileIndex> {
-        self.files.get(&file)
+        self.files.get(&file).map(Arc::as_ref)
     }
 
     pub fn formula(&self, id: FormulaId) -> Option<&Formula> {

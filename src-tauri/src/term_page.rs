@@ -199,7 +199,7 @@ pub(crate) fn kind_labels(project: &Project, term: Symbol) -> Vec<&'static str> 
 pub(crate) fn formula_ref(project: &Project, formula: &Formula) -> FormulaRef {
     let interner = project.interner();
     let file = project.file(formula.id.file);
-    let text = file.map_or("", |f| f.document.text());
+    let text = project.text(formula.id.file).unwrap_or_default();
     let start = usize::from(formula.range.start());
     let end = usize::from(formula.range.end());
 

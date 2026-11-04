@@ -3,18 +3,20 @@ use kifedit_sema::FileId;
 use kifedit_syntax::parser::parse;
 use kifedit_syntax::{SyntaxKind, TextEdit, TextRange, TextSize, format_file};
 
+const UNKNOWN: &str = "There is no file with this ID.";
+
 /// 與 Prettier 相同：有語法錯誤的檔案不格式化
 pub fn file_edit(project: &Project, file: FileId) -> Result<Option<TextEdit>, String> {
-    let source = editable(project, file)?;
-    let before = source.document.text();
-    let after = format_file(&source.document.parse().syntax(), &project.config().format.options());
+    editable(project, file)?;
+    let before = project.text(file).unwrap_or_default();
+    let after = format_file(&project.parse(file).ok_or(UNKNOWN)?.syntax(), &project.config().format.options());
     Ok(minimal_edit(before, &after))
 }
 
 /// 格式化游標（UTF-8 位元組位置）所在的頂層公式
 pub fn formula_edit(project: &Project, file: FileId, offset: u32) -> Result<Option<TextEdit>, String> {
-    let source = editable(project, file)?;
-    let root = source.document.parse().syntax();
+    editable(project, file)?;
+    let root = project.parse(file).ok_or(UNKNOWN)?.syntax();
     let offset = TextSize::from(offset);
     let Some(form) = root.children().find(|n| {
         n.kind() == SyntaxKind::TopLevelForm
@@ -24,7 +26,7 @@ pub fn formula_edit(project: &Project, file: FileId, offset: u32) -> Result<Opti
         return Ok(None);
     };
     let range = form.text_range();
-    let before = &source.document.text()[range];
+    let before = &project.text(file).unwrap_or_default()[range];
     let after = format_file(&parse(before).syntax(), &project.config().format.options());
     let after = after.trim_end_matches('\n');
     Ok(minimal_edit(before, after).map(|e| {
@@ -36,11 +38,11 @@ pub fn formula_edit(project: &Project, file: FileId, offset: u32) -> Result<Opti
 }
 
 fn editable(project: &Project, file: FileId) -> Result<&kifedit_project::SourceFile, String> {
-    let source = project.file(file).ok_or("There is no file with this ID.")?;
+    let source = project.file(file).ok_or(UNKNOWN)?;
     if source.role != FileRole::Editable {
         return Err(format!("You cannot format a library file: {}", source.path.display()));
     }
-    if !source.document.parse().errors.is_empty() {
+    if !project.parse(file).is_some_and(|p| p.errors.is_empty()) {
         return Err(format!(
             "The file has syntax errors. Correct them, then format the file: {}",
             source.path.display()

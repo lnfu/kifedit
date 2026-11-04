@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use kifedit_check::Severity;
 use kifedit_syntax::FormatOptions;
 use serde::Deserialize;
 
@@ -43,10 +44,18 @@ impl Config {
             path: path.to_owned(),
             source,
         })?;
-        Self::parse(&text).map_err(|source| ProjectError::Config {
+        let config = Self::parse(&text).map_err(|source| ProjectError::Config {
             path: path.to_owned(),
             source,
-        })
+        })?;
+        // 與 deny_unknown_fields 相同：不認得的規則代碼是設定錯誤
+        if let Some(code) = config.checks.keys().find(|c| kifedit_check::find_rule(c).is_none()) {
+            return Err(ProjectError::UnknownCheck {
+                path: path.to_owned(),
+                code: code.clone(),
+            });
+        }
+        Ok(config)
     }
 
     pub fn editable_paths(&self, root: &Path) -> Vec<PathBuf> {
@@ -95,15 +104,6 @@ impl FormatSection {
             indent: self.indent,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    Error,
-    Warning,
-    Info,
-    Off,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]

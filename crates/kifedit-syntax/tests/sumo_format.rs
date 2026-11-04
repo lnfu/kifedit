@@ -25,15 +25,15 @@ fn formatter_keeps_semantics_on_sumo() {
 }
 
 #[test]
-fn formatter_keeps_semantics_on_stretch4_lab() {
-    let path = common::sumo_root().join("../fixtures/stretch4_lab.kif");
+fn formatter_keeps_semantics_on_mm() {
+    let path = common::sumo_root().join("../fixtures/mm.kif");
     let Ok(src) = std::fs::read_to_string(&path) else {
         eprintln!("Skip the test. Cannot find {}.", path.display());
         return;
     };
     let mut stats = Stats::default();
     let out = check_file(&path, &src, &mut stats);
-    report("stretch4_lab.kif", &stats);
+    report("mm.kif", &stats);
 
     // 印出前 15 行被改動的輸出，方便人工檢查
     for line in new_lines(&src, &out).into_iter().take(15) {

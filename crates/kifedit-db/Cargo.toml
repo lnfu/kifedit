@@ -1,0 +1,8 @@
+[package]
+name = "kifedit-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kifedit-syntax = { version = "0.1.0", path = "../kifedit-syntax" }
+salsa = "0.28.5"

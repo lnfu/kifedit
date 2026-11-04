@@ -36,7 +36,7 @@ fn query_text_is_parsed_and_evaluated() {
 #[test]
 fn query_speed_on_the_example_project() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-    let lab = data.join("fixtures/stretch4_lab.kif");
+    let lab = data.join("fixtures/mm.kif");
     if !lab.is_file() {
         eprintln!("Skip the test. Cannot find {}.", lab.display());
         return;
@@ -47,7 +47,7 @@ fn query_speed_on_the_example_project() {
     fs::write(
         &config,
         format!(
-            "[project]\nname = \"stretch4-lab\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
+            "[project]\nname = \"mm\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
             library[0], library[1], lab
         ),
     )

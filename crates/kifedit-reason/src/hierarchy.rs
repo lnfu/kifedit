@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use kifedit_sema::Symbol;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Hierarchy {
     parents: FxHashMap<Symbol, Vec<Symbol>>,
     children: FxHashMap<Symbol, Vec<Symbol>>,

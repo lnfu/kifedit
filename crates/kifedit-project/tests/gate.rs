@@ -1,4 +1,4 @@
-// M1 關卡：能用表單完成 stretch4_lab.kif 的日常修改，且不動到其他排版（M1.md 的 G1–G4）
+// M1 關卡：能用表單完成 mm.kif 的日常修改，且不動到其他排版（M1.md 的 G1–G4）
 
 use std::fs;
 use std::path::Path;
@@ -9,7 +9,7 @@ use kifedit_sema::{FileId, FormulaId, Term};
 const LAB: FileId = FileId(0);
 
 fn open() -> Option<(tempfile::TempDir, Project)> {
-    let lab = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/fixtures/stretch4_lab.kif");
+    let lab = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/fixtures/mm.kif");
     if !lab.is_file() {
         eprintln!("Skip the test. Cannot find {}.", lab.display());
         return None;
@@ -40,7 +40,7 @@ fn is(project: &Project, term: &Term, name: &str) -> bool {
 }
 
 fn text(project: &Project) -> String {
-    project.file(LAB).unwrap().document.text().to_string()
+    project.text(LAB).unwrap().to_string()
 }
 
 // 以共同前綴與後綴比較，回傳（第一個不同的行號，從 1 起算；被刪除的行；被加入的行）
@@ -65,13 +65,13 @@ fn line_diff<'a>(before: &'a str, after: &'a str) -> (usize, Vec<&'a str>, Vec<&
 
 fn check(project: &mut Project, edit: FormEdit, line: usize, removed: &[&str], added: &[&str]) {
     let before = text(project);
-    let errors_before = project.file(LAB).unwrap().document.parse().errors.len();
+    let errors_before = project.parse(LAB).unwrap().errors.len();
 
     let inverse = project.apply_form(&edit).unwrap();
     let after = text(project);
     assert_eq!(line_diff(&before, &after), (line, removed.to_vec(), added.to_vec()));
     assert_eq!(
-        project.file(LAB).unwrap().document.parse().errors.len(),
+        project.parse(LAB).unwrap().errors.len(),
         errors_before,
         "The form edit adds a syntax error."
     );
@@ -87,42 +87,42 @@ fn g1_add_fact_after_the_last_formula_of_the_term() {
         file: LAB,
         relation: "rosFrameId".into(),
         args: vec![
-            FormValue::Symbol("HeadLidarLeft".into()),
-            FormValue::Str("head_lidar_left".into()),
+            FormValue::Symbol("HeadLidarRight".into()),
+            FormValue::Str("head_lidar_right".into()),
         ],
     };
-    check(&mut project, edit, 545, &[], &["(rosFrameId HeadLidarLeft \"head_lidar_left\")"]);
+    check(&mut project, edit, 531, &[], &["(rosFrameId HeadLidarRight \"head_lidar_right\")"]);
 }
 
 #[test]
 fn g2_change_one_argument() {
     let Some((_dir, mut project)) = open() else { return };
     let formula = find(&project, "attribute", "SceneCameraArray", |args| {
-        is(&project, &args[1], "NotYetUsedStatus")
+        is(&project, &args[1], "InUseStatus")
     });
     let edit = FormEdit::ChangeArgument {
         formula,
         argument: 1,
-        value: FormValue::Symbol("InUseStatus".into()),
+        value: FormValue::Symbol("NotYetUsedStatus".into()),
     };
     check(
         &mut project,
         edit,
-        508,
-        &["(attribute SceneCameraArray NotYetUsedStatus)"],
+        480,
         &["(attribute SceneCameraArray InUseStatus)"],
+        &["(attribute SceneCameraArray NotYetUsedStatus)"],
     );
 }
 
 #[test]
 fn g3_delete_fact() {
     let Some((_dir, mut project)) = open() else { return };
-    let formula = find(&project, "todoNote", "HeadCameraCenter", |_| true);
+    let formula = find(&project, "todoNote", "CeilingSceneCamera", |_| true);
     check(
         &mut project,
         FormEdit::DeleteFact { formula },
-        598,
-        &["(todoNote HeadCameraCenter \"確認鏡頭類型與視角。\")"],
+        475,
+        &["(todoNote CeilingSceneCamera \"型號尚未確認。\")"],
         &[],
     );
 }
@@ -130,18 +130,18 @@ fn g3_delete_fact() {
 #[test]
 fn g4a_change_one_line_string() {
     let Some((_dir, mut project)) = open() else { return };
-    let formula = find(&project, "documentation", "HeadCameraCenter", |_| true);
+    let formula = find(&project, "documentation", "CeilingSceneCamera", |_| true);
     let edit = FormEdit::ChangeString {
         formula,
         argument: 2,
-        text: "頭部中央的高解析彩色相機，用於辨識物體。".into(),
+        text: "裝在天花板、由上往下拍攝整個測試場域的外部相機。".into(),
     };
     check(
         &mut project,
         edit,
-        597,
-        &["  \"頭部中央的高解析彩色相機。\")"],
-        &["  \"頭部中央的高解析彩色相機，用於辨識物體。\")"],
+        474,
+        &["  \"裝在天花板、由上往下拍攝測試場域的外部相機。\")"],
+        &["  \"裝在天花板、由上往下拍攝整個測試場域的外部相機。\")"],
     );
 }
 
@@ -167,7 +167,7 @@ fn g4b_change_a_multi_line_string() {
     check(
         &mut project,
         edit,
-        620,
+        596,
         &["目前的使用方式：只當作相機與深度感測器，RVC2 的神經網路運算能力沒有使用。"],
         &["目前的使用方式：當作相機與深度感測器，RVC2 的神經網路運算能力沒有使用。"],
     );
