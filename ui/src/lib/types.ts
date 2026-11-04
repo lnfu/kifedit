@@ -16,8 +16,15 @@ export type Location = {
 export type Diagnostic = {
   from: number
   to: number
+  severity: 'error' | 'warning' | 'info'
   code: string
   message: string
+}
+
+export type DiagnosticsChanged = {
+  file: number
+  version: number
+  diagnostics: Diagnostic[]
 }
 
 export type FileContent = {

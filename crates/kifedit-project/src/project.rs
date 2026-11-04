@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +38,7 @@ pub struct Project {
     pub(crate) db: RootDatabase,
     pub(crate) files: Vec<SourceFile>,
     input: ProjectInput,
+    versions: Vec<u64>, // 每個檔案的版本號（§14.4），每次修改加 1
 }
 
 impl Project {
@@ -88,12 +90,14 @@ impl Project {
         });
         project_taxonomy(&db, input);
 
+        let versions = vec![0; files.len()];
         Ok(Self {
             root,
             config,
             db,
             files,
             input,
+            versions,
         })
     }
 
@@ -133,16 +137,34 @@ impl Project {
         project_taxonomy(&self.db, self.input)
     }
 
+    pub fn version(&self, id: FileId) -> u64 {
+        self.versions.get(id.0 as usize).copied().unwrap_or(0)
+    }
+
     /// 一個檔案的靜態檢查結果（§7），已套用 `[checks]` 的嚴重度覆寫；只重查受修改影響的部分
     pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
         let Some(file) = self.file(id) else { return Vec::new() };
-        check_file(&self.db, self.input, file.input)
-            .iter()
-            .filter_map(|d| {
-                let severity = self.config.checks.get(d.code).copied().unwrap_or(d.severity);
-                (severity != Severity::Off).then(|| Diagnostic { severity, ..d.clone() })
-            })
-            .collect()
+        with_overrides(&self.config.checks, check_file(&self.db, self.input, file.input))
+    }
+
+    /// 唯讀快照，可交給其他執行緒檢查。修改專案時，快照上進行中的查詢會被取消。
+    /// 快照不可閒置保留：salsa 寫入前會等所有複本都被丟棄
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            db: self.db.clone(),
+            input: self.input,
+            files: self
+                .files
+                .iter()
+                .map(|f| SnapshotFile {
+                    id: f.id,
+                    role: f.role,
+                    input: f.input,
+                    version: self.version(f.id),
+                })
+                .collect(),
+            checks: self.config.checks.clone(),
+        }
     }
 
     /// 平行檢查所有檔案，結果留在資料庫中；之後的 diagnostics 直接取用
@@ -166,6 +188,7 @@ impl Project {
         let mut text = input.text(&self.db).clone();
         let inverse = apply_edits(&mut text, edits)?;
         input.set_text(&mut self.db).to(text);
+        self.versions[id.0 as usize] += 1;
         Ok(inverse)
     }
 
@@ -194,4 +217,40 @@ impl Project {
         })?;
         std::fs::write(&file.path, file.input.text(&self.db))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SnapshotFile {
+    pub id: FileId,
+    pub role: FileRole,
+    pub version: u64,
+    input: File,
+}
+
+pub struct Snapshot {
+    db: RootDatabase,
+    input: ProjectInput,
+    files: Vec<SnapshotFile>,
+    checks: BTreeMap<String, Severity>,
+}
+
+impl Snapshot {
+    pub fn files(&self) -> &[SnapshotFile] {
+        &self.files
+    }
+
+    pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
+        let Some(file) = self.files.get(id.0 as usize) else { return Vec::new() };
+        with_overrides(&self.checks, check_file(&self.db, self.input, file.input))
+    }
+}
+
+fn with_overrides(checks: &BTreeMap<String, Severity>, diagnostics: &[Diagnostic]) -> Vec<Diagnostic> {
+    diagnostics
+        .iter()
+        .filter_map(|d| {
+            let severity = checks.get(d.code).copied().unwrap_or(d.severity);
+            (severity != Severity::Off).then(|| Diagnostic { severity, ..d.clone() })
+        })
+        .collect()
 }

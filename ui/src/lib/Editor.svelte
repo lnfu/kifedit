@@ -3,10 +3,11 @@
   import { basicSetup } from 'codemirror'
   import { Annotation, EditorState, Prec, Text, type Transaction } from '@codemirror/state'
   import { EditorView, keymap } from '@codemirror/view'
-  import { setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
+  import { listen } from '@tauri-apps/api/event'
+  import { forEachDiagnostic, setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
   import { forceParsing } from '@codemirror/language'
   import { kif, kifHighlight } from './kif'
-  import type { Diagnostic, EditOutcome, FileContent, FileState } from './types'
+  import type { Diagnostic, DiagnosticsChanged, EditOutcome, FileContent, FileState } from './types'
 
   let { content, line, onEdit }: { content: FileContent; line: number; onEdit?: () => void } = $props()
 
@@ -17,6 +18,7 @@
   let version = $state(0)
   let savedVersion = $state(0)
   let errorCount = $state(0)
+  let warningCount = $state(0)
   let message = $state<string | null>(null)
   let resyncs = $state(0)
 
@@ -45,18 +47,37 @@
     return result
   }
 
-  function showErrors(errors: Diagnostic[]) {
-    errorCount = errors.length
-    if (!view) return
-    const text = view.state.doc.toString()
-    const offsets = utf16Offsets(text, errors.flatMap((e) => [e.from, e.to]))
-    const diagnostics: LintDiagnostic[] = errors.map((e) => ({
-      from: offsets.get(e.from)!,
-      to: offsets.get(e.to)!,
-      severity: 'error',
-      message: `${e.code} ${e.message}`,
+  function toLint(list: Diagnostic[]): LintDiagnostic[] {
+    if (!view) return []
+    const offsets = utf16Offsets(view.state.doc.toString(), list.flatMap((d) => [d.from, d.to]))
+    return list.map((d) => ({
+      from: offsets.get(d.from)!,
+      to: offsets.get(d.to)!,
+      severity: d.severity,
+      message: `${d.code} ${d.message}`,
     }))
-    view.dispatch(setDiagnostics(view.state, diagnostics))
+  }
+
+  function display(list: LintDiagnostic[]) {
+    if (!view) return
+    errorCount = list.filter((d) => d.severity === 'error').length
+    warningCount = list.filter((d) => d.severity === 'warning').length
+    view.dispatch(setDiagnostics(view.state, list))
+  }
+
+  // 檢查結果：只接受與目前版本相同者（§14.4）
+  function showDiagnostics(list: Diagnostic[]) {
+    display(toLint(list))
+  }
+
+  // 打字時立即顯示語法錯誤；其他診斷由 CodeMirror 隨修改移動位置，等檢查結果送來再更新
+  function showSyntaxErrors(errors: Diagnostic[]) {
+    if (!view) return
+    const kept: LintDiagnostic[] = []
+    forEachDiagnostic(view.state, (d, from, to) => {
+      if (!d.message.startsWith('E001 ')) kept.push({ ...d, from, to })
+    })
+    display([...kept, ...toLint(errors)])
   }
 
   // 一筆交易中的所有修改都以修改前的文件為準，與 LSP 和後端 apply_edits 的規則相同
@@ -75,7 +96,7 @@
       if (file !== content.id || !view) return
       version = result.version
       if (result.status === 'applied') {
-        showErrors(result.errors)
+        showSyntaxErrors(result.errors)
       } else {
         resyncs += 1
         replaceText(result.text)
@@ -114,7 +135,7 @@
       if (!result || file !== content.id) return
       replaceText(result.text)
       version = result.version
-      showErrors(result.errors)
+      showSyntaxErrors(result.errors)
       message = null
     } catch (e) {
       message = String(e)
@@ -199,8 +220,13 @@
     view = new EditorView({ state, parent: container })
     // CodeMirror 預設只解析畫面附近的內容，捲動時才補上標色；開檔時先解析全文，最多花 500 ms
     forceParsing(view, view.state.doc.length, 500)
-    showErrors(content.errors)
+    showDiagnostics(content.errors)
+    const unlisten = listen<DiagnosticsChanged>('diagnostics_changed', (event) => {
+      const update = event.payload
+      if (update.file === file && update.version === version) showDiagnostics(update.diagnostics)
+    })
     return () => {
+      unlisten.then((stop) => stop())
       view?.destroy()
       view = null
     }
@@ -237,7 +263,8 @@
   </div>
   <div class="editor" bind:this={container}></div>
   <div class="status">
-    <span class:error={errorCount > 0}>Syntax errors: {errorCount}</span>
+    <span class:error={errorCount > 0}>Errors: {errorCount}</span>
+    <span>Warnings: {warningCount}</span>
     {#if resyncs > 0}
       <span>Resynchronized with the backend: {resyncs} times.</span>
     {/if}

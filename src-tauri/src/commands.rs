@@ -1,28 +1,72 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use kifedit_project::{EditFileError, FileRole, FormEdit, FormValue, Project};
+use kifedit_project::{Checker, EditFileError, FileRole, FormEdit, FormValue, Project, Severity, Update};
 use kifedit_sema::{FileId, FormulaId};
 use kifedit_syntax::{TextEdit, TextRange, apply_edits as apply_text_edits};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::history::{History, Source};
 
-// 文件版本號（§14.4）：每套用一組修改加 1。只在持有 project 鎖時讀寫
+// 文件版本號由 Project 管理（§14.4），每次修改加 1
 #[derive(Default)]
 pub struct Session {
     pub project: Option<Project>,
-    pub versions: HashMap<u32, u64>,
     pub saved: HashMap<u32, u64>, // 最後一次存檔時的版本號
     pub histories: HashMap<u32, History>,
 }
 
+// 鎖的順序：需要兩個鎖時先 session 再 checker
 #[derive(Default)]
 pub struct AppState {
-    pub session: Mutex<Session>,
+    pub session: Arc<Mutex<Session>>,
+    pub checker: Mutex<Option<Checker>>,
+}
+
+impl AppState {
+    /// 通知背景檢查：檔案已修改（§7.2）
+    fn edited(&self, file: u32) {
+        if let Some(checker) = self.checker.lock().unwrap().as_ref() {
+            checker.edited(FileId(file));
+        }
+    }
+}
+
+/// diagnostics_changed 事件（§14.3）：一個檔案在某個版本的所有診斷
+#[derive(Clone, Serialize)]
+pub struct DiagnosticsChanged {
+    file: u32,
+    version: u64,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl From<Update> for DiagnosticsChanged {
+    fn from(update: Update) -> Self {
+        Self {
+            file: update.file.0,
+            version: update.version,
+            diagnostics: update.diagnostics.into_iter().map(Diagnostic::from).collect(),
+        }
+    }
+}
+
+impl From<kifedit_project::Diagnostic> for Diagnostic {
+    fn from(d: kifedit_project::Diagnostic) -> Self {
+        Self {
+            from: d.range.start().into(),
+            to: d.range.end().into(),
+            severity: match d.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Info | Severity::Off => "info",
+            },
+            code: d.code,
+            message: d.message,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -47,7 +91,11 @@ pub struct ProjectSummary {
 
 // CPU 工作放在背景執行緒，不阻塞 IPC（§3.2）
 #[tauri::command]
-pub async fn open_project(path: String, state: State<'_, AppState>) -> Result<ProjectSummary, String> {
+pub async fn open_project(
+    path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ProjectSummary, String> {
     let start = Instant::now();
     let path = PathBuf::from(path);
     let project = tauri::async_runtime::spawn_blocking(move || Project::open(&path))
@@ -57,11 +105,26 @@ pub async fn open_project(path: String, state: State<'_, AppState>) -> Result<Pr
     let load_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let summary = summarize(&project, load_ms);
-    let mut session = state.session.lock().unwrap();
-    session.project = Some(project);
-    session.versions.clear();
-    session.saved.clear();
-    session.histories.clear();
+
+    // 先停掉舊的背景檢查；不可持有 session 鎖，因為它可能正在等這個鎖
+    let old = state.checker.lock().unwrap().take();
+    drop(old);
+    {
+        let mut session = state.session.lock().unwrap();
+        session.project = Some(project);
+        session.saved.clear();
+        session.histories.clear();
+    }
+
+    let shared = state.session.clone();
+    let checker = Checker::spawn(
+        move || shared.lock().unwrap().project.as_ref().map(Project::snapshot),
+        move |update| {
+            let _ = app.emit("diagnostics_changed", DiagnosticsChanged::from(update));
+        },
+    );
+    checker.check_all();
+    *state.checker.lock().unwrap() = Some(checker);
     Ok(summary)
 }
 
@@ -74,12 +137,13 @@ pub struct EditInput {
     insert: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Diagnostic {
     from: u32,
     to: u32,
+    severity: &'static str,
     code: &'static str,
-    message: &'static str,
+    message: String,
 }
 
 #[derive(Serialize)]
@@ -100,13 +164,10 @@ pub fn apply_edits(
 ) -> Result<EditOutcome, String> {
     let mut session = state.session.lock().unwrap();
     let Session {
-        project,
-        versions,
-        histories,
-        ..
+        project, histories, ..
     } = &mut *session;
     let project = project.as_mut().ok_or(NO_PROJECT)?;
-    let current = versions.entry(file).or_insert(0);
+    let current = project.version(FileId(file));
 
     let conflict = |project: &Project, version: u64| -> Result<EditOutcome, String> {
         let text = project
@@ -115,8 +176,8 @@ pub fn apply_edits(
             .to_string();
         Ok(EditOutcome::Conflict { version, text })
     };
-    if version != *current {
-        return conflict(project, *current);
+    if version != current {
+        return conflict(project, current);
     }
 
     let edits: Vec<TextEdit> = edits
@@ -128,13 +189,13 @@ pub fn apply_edits(
             .entry(file)
             .or_default()
             .record(Source::Editor, edits, inverse),
-        Err(EditFileError::Edit(_)) => return conflict(project, *current),
+        Err(EditFileError::Edit(_)) => return conflict(project, current),
         Err(e) => return Err(e.to_string()),
     }
-    *current += 1;
+    state.edited(file);
     Ok(EditOutcome::Applied {
-        version: *current,
-        errors: diagnostics(project, file),
+        version: project.version(FileId(file)),
+        errors: syntax_errors(project, file),
     })
 }
 
@@ -151,9 +212,9 @@ fn file_state(session: &Session, file: u32) -> Result<FileState, String> {
         .text(FileId(file))
         .ok_or("There is no file with this ID.")?;
     Ok(FileState {
-        version: session.versions.get(&file).copied().unwrap_or(0),
+        version: project.version(FileId(file)),
         text: text.to_string(),
-        errors: diagnostics(project, file),
+        errors: syntax_errors(project, file),
     })
 }
 
@@ -161,10 +222,7 @@ fn file_state(session: &Session, file: u32) -> Result<FileState, String> {
 fn step_history(state: &AppState, file: u32, redo: bool) -> Result<Option<FileState>, String> {
     let mut session = state.session.lock().unwrap();
     let Session {
-        project,
-        versions,
-        histories,
-        ..
+        project, histories, ..
     } = &mut *session;
     let project = project.as_mut().ok_or(NO_PROJECT)?;
     let history = histories.entry(file).or_default();
@@ -177,7 +235,7 @@ fn step_history(state: &AppState, file: u32, redo: bool) -> Result<Option<FileSt
     if !changed {
         return Ok(None);
     }
-    *versions.entry(file).or_insert(0) += 1;
+    state.edited(file);
     file_state(&session, file).map(Some)
 }
 
@@ -341,6 +399,7 @@ pub fn apply_form(input: FormInput, state: State<'_, AppState>) -> Result<FormAp
     let (file, edit) = input.into_edit();
     let edits = project.preview_form(&edit).map_err(|e| e.to_string())?;
     let version = apply_recorded(&mut session, file, edits, Source::Form)?;
+    state.edited(file);
     Ok(FormApplied { file, version })
 }
 
@@ -360,9 +419,7 @@ fn apply_recorded(
         .entry(file)
         .or_default()
         .record(source, edits, inverse);
-    let version = session.versions.entry(file).or_insert(0);
-    *version += 1;
-    Ok(*version)
+    Ok(project.version(FileId(file)))
 }
 
 #[tauri::command]
@@ -397,6 +454,7 @@ pub fn format_file(file: u32, offset: Option<u32>, state: State<'_, AppState>) -
     };
     let Some(edit) = edit else { return Ok(None) };
     apply_recorded(&mut session, file, vec![edit], Source::Form)?;
+    state.edited(file);
     file_state(&session, file).map(Some)
 }
 
@@ -465,6 +523,7 @@ pub fn format_project(state: State<'_, AppState>) -> Result<Vec<FileVersion>, St
         .into_iter()
         .map(|(file, edit)| {
             let version = apply_recorded(&mut session, file, vec![edit], Source::Form)?;
+            state.edited(file);
             Ok(FileVersion { file, version })
         })
         .collect()
@@ -487,12 +546,13 @@ pub fn save_file(file: u32, state: State<'_, AppState>) -> Result<u64, String> {
     project
         .save(FileId(file))
         .map_err(|e| format!("Cannot save the file: {e}"))?;
-    let version = session.versions.get(&file).copied().unwrap_or(0);
+    let version = project.version(FileId(file));
     session.saved.insert(file, version);
     Ok(version)
 }
 
-fn diagnostics(project: &Project, file: u32) -> Vec<Diagnostic> {
+/// 只有語法錯誤，打字時立即回傳；完整的檢查結果由 diagnostics_changed 事件送出
+fn syntax_errors(project: &Project, file: u32) -> Vec<Diagnostic> {
     project
         .parse(FileId(file))
         .map(|p| {
@@ -501,8 +561,9 @@ fn diagnostics(project: &Project, file: u32) -> Vec<Diagnostic> {
                 .map(|e| Diagnostic {
                     from: e.range.start().into(),
                     to: e.range.end().into(),
+                    severity: "error",
                     code: e.kind.code(),
-                    message: e.kind.message(),
+                    message: e.kind.message().to_string(),
                 })
                 .collect()
         })
@@ -544,9 +605,13 @@ pub fn file_text(file: u32, state: State<'_, AppState>) -> Result<FileContent, S
         path: source.path.display().to_string(),
         read_only: source.role == FileRole::Library,
         text: project.text(FileId(file)).unwrap_or_default().to_string(),
-        version: session.versions.get(&file).copied().unwrap_or(0),
+        version: project.version(FileId(file)),
         saved_version: session.saved.get(&file).copied().unwrap_or(0),
-        errors: diagnostics(project, file),
+        errors: project
+            .diagnostics(FileId(file))
+            .into_iter()
+            .map(Diagnostic::from)
+            .collect(),
     })
 }
 
