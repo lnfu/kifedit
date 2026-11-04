@@ -1,10 +1,15 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
+  import FolderOpen from '@lucide/svelte/icons/folder-open'
+  import Moon from '@lucide/svelte/icons/moon'
+  import Sun from '@lucide/svelte/icons/sun'
+  import X from '@lucide/svelte/icons/x'
   import Tree from './lib/Tree.svelte'
   import TermPage from './lib/TermPage.svelte'
   import Editor from './lib/Editor.svelte'
   import Search from './lib/Search.svelte'
+  import { theme, toggleTheme } from './lib/theme.svelte'
   import type { FileContent, FormatPlan, Location } from './lib/types'
 
   type FileSummary = {
@@ -23,11 +28,18 @@
     loadMs: number
   }
 
+  // 分頁與 VS Code 相同：預覽分頁（斜體）會被下一次開啟取代；雙擊或編輯後固定
+  type Tab =
+    | { kind: 'term'; name: string; preview: boolean }
+    | { kind: 'file'; file: FileContent; line: number; preview: boolean }
+
   let summary = $state<ProjectSummary | null>(null)
   let error = $state<string | null>(null)
   let loading = $state(false)
-  let selected = $state<string | null>(null)
-  let history = $state<string[]>([])
+  let tabs = $state<Tab[]>([])
+  let active = $state(0)
+  let current = $derived<Tab | undefined>(tabs[active])
+  let selectedTerm = $derived(current?.kind === 'term' ? current.name : null)
 
   const views = [
     { id: 'classes', label: 'Classes' },
@@ -37,15 +49,14 @@
   ]
   let view = $state('classes')
 
-  // 側欄寬度存在 localStorage；無法使用時以預設值顯示
   const WIDTH_KEY = 'kifedit.sidebarWidth'
   let sidebarWidth = $state(readWidth())
 
   function readWidth() {
     try {
-      return Number(localStorage.getItem(WIDTH_KEY)) || 360
+      return Number(localStorage.getItem(WIDTH_KEY)) || 300
     } catch {
-      return 360
+      return 300
     }
   }
 
@@ -77,10 +88,8 @@
     error = null
     try {
       summary = await invoke<ProjectSummary>('open_project', { path })
-      selected = null
-      history = []
-      file = null
-      panel = 'term'
+      tabs = []
+      active = 0
     } catch (e) {
       error = String(e)
     } finally {
@@ -88,27 +97,54 @@
     }
   }
 
-  let panel = $state<'term' | 'editor'>('term')
-  let file = $state<FileContent | null>(null)
-  let line = $state(1)
+  function key(tab: Tab) {
+    return tab.kind === 'term' ? `term:${tab.name}` : `file:${tab.file.id}`
+  }
+
+  function show(tab: Tab) {
+    const existing = tabs.findIndex((t) => key(t) === key(tab))
+    if (existing >= 0) {
+      tabs[existing] = { ...tab, preview: tabs[existing].preview && tab.preview }
+      active = existing
+      return
+    }
+    const preview = tabs.findIndex((t) => t.preview)
+    if (tab.preview && preview >= 0) {
+      tabs[preview] = tab
+      active = preview
+    } else {
+      tabs.push(tab)
+      active = tabs.length - 1
+    }
+  }
 
   function navigate(name: string) {
-    panel = 'term'
-    if (selected === name) return
-    if (selected) history = [...history, selected]
-    selected = name
+    show({ kind: 'term', name, preview: true })
   }
 
   async function openLocation(location: Location) {
     error = null
     try {
       // 每次都向後端取最新內容與版本號，文字以後端為準
-      file = await invoke<FileContent>('file_text', { file: location.file })
-      line = location.line
-      panel = 'editor'
+      const file = await invoke<FileContent>('file_text', { file: location.file })
+      show({ kind: 'file', file, line: location.line, preview: true })
     } catch (e) {
       error = String(e)
     }
+  }
+
+  function pin(index: number) {
+    if (tabs[index]) tabs[index].preview = false
+  }
+
+  function close(index: number) {
+    tabs.splice(index, 1)
+    if (active >= tabs.length) active = Math.max(0, tabs.length - 1)
+    else if (index < active) active -= 1
+  }
+
+  function title(tab: Tab) {
+    return tab.kind === 'term' ? tab.name : tab.file.path.split('/').pop()
   }
 
   // Format Project：先預覽會變動的檔案，確認後才套用（§8.6）
@@ -127,31 +163,52 @@
     try {
       const changed = await invoke<{ file: number; version: number }[]>('format_project')
       plan = null
-      if (file && changed.some((c) => c.file === file!.id)) {
-        file = await invoke<FileContent>('file_text', { file: file.id })
+      for (const [i, tab] of tabs.entries()) {
+        if (tab.kind === 'file' && changed.some((c) => c.file === tab.file.id)) {
+          tabs[i] = { ...tab, file: await invoke<FileContent>('file_text', { file: tab.file.id }) }
+        }
       }
     } catch (e) {
       error = String(e)
     }
   }
 
-  function back() {
-    selected = history.at(-1) ?? null
-    history = history.slice(0, -1)
+  function fileName(path: string) {
+    return path.split('/').pop()
   }
 </script>
 
-<main>
+<div class="app">
   <header>
-    <button onclick={openProject} disabled={loading}>
+    <span class="brand">kifedit</span>
+    {#if summary}
+      <span class="muted">{summary.name}</span>
+    {/if}
+    <button class="small" onclick={openProject} disabled={loading}>
+      <FolderOpen class="ico" />
       {loading ? 'Opening…' : 'Open Project'}
     </button>
+    <div class="center">
+      {#if summary}
+        <Search onNavigate={navigate} onOpen={openLocation} />
+      {/if}
+    </div>
     {#if summary}
-      <span class="project">{summary.name}</span>
-      <Search onNavigate={navigate} onOpen={openLocation} />
       <button onclick={previewFormat}>Format Project</button>
     {/if}
+    <button
+      class="icon"
+      onclick={toggleTheme}
+      aria-label={theme.current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={theme.current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+    >
+      {#if theme.current === 'dark'}<Sun class="ico" />{:else}<Moon class="ico" />{/if}
+    </button>
   </header>
+
+  {#if error}
+    <p class="banner error">{error}</p>
+  {/if}
 
   {#if plan}
     <div class="plan">
@@ -161,8 +218,11 @@
         <p>Files that will change: {plan.changes.length}</p>
         <ul>
           {#each plan.changes as c (c.file)}
-            <li>
-              {c.path}: from line {c.preview.line}, {c.preview.removed.length} lines change to {c.preview.added.length} lines
+            <li class="mono">
+              {fileName(c.path)}
+              <span class="muted">
+                from line {c.preview.line}: {c.preview.removed.length} lines change to {c.preview.added.length} lines
+              </span>
             </li>
           {/each}
         </ul>
@@ -170,57 +230,259 @@
       {#each plan.skipped as path (path)}
         <p class="error">The file has syntax errors. It is not formatted: {path}</p>
       {/each}
-      {#if plan.changes.length > 0}
-        <button onclick={applyFormat}>Apply</button>
-      {/if}
-      <button onclick={() => (plan = null)}>Close</button>
+      <div class="actions">
+        {#if plan.changes.length > 0}
+          <button class="primary" onclick={applyFormat}>Apply</button>
+        {/if}
+        <button onclick={() => (plan = null)}>Close</button>
+      </div>
     </div>
-  {/if}
-
-  {#if error}
-    <p class="error">{error}</p>
   {/if}
 
   {#if summary}
-    <div class="layout">
+    <div class="body">
       <aside style:width="{sidebarWidth}px">
-        <nav class="tabs">
+        <div class="views" role="tablist">
           {#each views as v (v.id)}
-            <button class:active={view === v.id} onclick={() => (view = v.id)}>{v.label}</button>
+            <button
+              class="small"
+              role="tab"
+              aria-selected={view === v.id}
+              class:current={view === v.id}
+              onclick={() => (view = v.id)}>{v.label}</button
+            >
           {/each}
-        </nav>
-        {#key summary}
-          {#key view}
-            <Tree {view} onSelect={navigate} onOpen={openLocation} />
+        </div>
+        <div class="tree">
+          {#key summary}
+            {#key view}
+              <Tree {view} selected={selectedTerm} onSelect={navigate} onOpen={openLocation} />
+            {/key}
           {/key}
-        {/key}
+        </div>
       </aside>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="resizer" onpointerdown={startResize}></div>
-      <section class="content">
-        {#if panel === 'editor' && file}
-          {#if selected}
-            <button onclick={() => (panel = 'term')}>← {selected}</button>
+      <main>
+        <div class="tabs" role="tablist">
+          {#each tabs as tab, i (key(tab))}
+            <div class="tab" class:current={i === active} class:preview={tab.preview}>
+              <button
+                class="plain"
+                role="tab"
+                aria-selected={i === active}
+                onclick={() => (active = i)}
+                ondblclick={() => pin(i)}
+                onauxclick={(e) => e.button === 1 && close(i)}>{title(tab)}</button
+              >
+              <button class="plain close" aria-label="Close" title="Close" onclick={() => close(i)}>
+                <X class="ico" />
+              </button>
+            </div>
+          {/each}
+        </div>
+        <div class="page">
+          {#if current?.kind === 'term'}
+            {#key key(current)}
+              <TermPage
+                name={current.name}
+                editableFiles={summary.files.filter((f) => f.role === 'editable')}
+                onNavigate={navigate}
+                onOpen={openLocation}
+              />
+            {/key}
+          {:else if current?.kind === 'file'}
+            {#key current.file}
+              <Editor content={current.file} line={current.line} onEdit={() => pin(active)} />
+            {/key}
+          {:else}
+            <div class="empty muted">
+              <p>Select a term in the tree, or push Ctrl+P to search.</p>
+            </div>
           {/if}
-          <Editor content={file} {line} />
-        {:else if selected}
-          <button onclick={back} disabled={history.length === 0}>← Back</button>
-          <TermPage
-            name={selected}
-            editableFiles={summary.files.filter((f) => f.role === 'editable')}
-            onNavigate={navigate}
-            onOpen={openLocation}
-          />
-        {:else}
-          <p class="hint">
-            {summary.formulaCount.toLocaleString()} formulas in {summary.files.length} files.
-            Load time: {summary.loadMs.toFixed(0)} ms.
-          </p>
-          <p class="hint">Select a term in the tree.</p>
-        {/if}
-      </section>
+        </div>
+      </main>
     </div>
+    <footer>
+      <span>{summary.files.length} files</span>
+      <span>{summary.formulaCount.toLocaleString()} formulas</span>
+      <span class="right">Load {summary.loadMs.toFixed(0)} ms</span>
+    </footer>
   {:else if !error}
-    <p class="hint">Open a project.toml file to start.</p>
+    <div class="empty muted">
+      <p>Open a project.toml file to start.</p>
+    </div>
   {/if}
-</main>
+</div>
+
+<style>
+  .app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    height: 44px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    font-weight: 600;
+  }
+  .center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+  }
+  .banner {
+    margin: 0;
+    padding: 6px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .plan {
+    position: absolute;
+    top: 52px;
+    right: 12px;
+    z-index: 20;
+    width: 480px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-control);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+  }
+  .plan p {
+    margin: 0 0 8px;
+  }
+  .plan ul {
+    margin: 0 0 8px;
+    padding-left: 16px;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  aside {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+  }
+  .views {
+    display: flex;
+    gap: 2px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .views button {
+    border-color: transparent;
+    background: none;
+    color: var(--muted);
+  }
+  .views button.current {
+    background: var(--surface-2);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .tree {
+    flex: 1;
+    overflow: auto;
+    padding: 6px 0;
+  }
+  .resizer {
+    flex: none;
+    width: 4px;
+    cursor: col-resize;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+  }
+  .resizer:hover {
+    background: var(--accent);
+  }
+  main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+  }
+  .tabs {
+    height: 34px;
+    flex: none;
+    display: flex;
+    align-items: flex-end;
+    padding-left: 4px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px 6px 12px;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    white-space: nowrap;
+  }
+  .tab.current {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+    font-weight: 500;
+    margin-bottom: -1px;
+    padding-bottom: 7px;
+  }
+  .tab.preview > button:first-child {
+    font-style: italic;
+  }
+  .close {
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .tab:hover .close,
+  .tab.current .close {
+    visibility: visible;
+  }
+  .page {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    height: 100%;
+  }
+  footer {
+    height: 24px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 12px;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border-top: 1px solid var(--border);
+  }
+  .right {
+    margin-left: auto;
+  }
+</style>

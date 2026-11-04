@@ -1,5 +1,10 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import Pencil from '@lucide/svelte/icons/pencil'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Minus from '@lucide/svelte/icons/minus'
+  import Trash from '@lucide/svelte/icons/trash-2'
+  import Formula from './Formula.svelte'
   import type {
     EditableFile,
     FormInput,
@@ -27,13 +32,15 @@
   let error = $state<string | null>(null)
   let refresh = $state(0)
 
-  // 表單：一次修改一條公式；送出前先預覽（§8.3）
+  // 表單：一次修改一條公式；送出前先預覽，預覽顯示在修改的位置（§8.3）
+  const ADD = 'add'
   let editing = $state<string | null>(null)
   let draft = $state<string[]>([])
-  let pending = $state<{ input: FormInput; preview: Preview } | null>(null)
-  let formError = $state<string | null>(null)
+  let pending = $state<{ input: FormInput; preview: Preview; anchor: string } | null>(null)
+  let formError = $state<{ anchor: string; message: string } | null>(null)
   let lastFile = $state<number | null>(null)
 
+  let adding = $state(false)
   let addFile = $state<number | null>(null)
   let addRelation = $state('')
   let addArgs = $state<ValueInput[]>([])
@@ -43,23 +50,30 @@
   function startEdit(f: FormulaRef) {
     editing = key(f)
     draft = f.args.map((a) => a.text)
+    pending = null
     formError = null
   }
 
-  async function propose(input: FormInput) {
+  function cancel() {
+    editing = null
+    pending = null
+    formError = null
+  }
+
+  async function propose(input: FormInput, anchor: string) {
     formError = null
     try {
       const preview = await invoke<Preview>('preview_form', { input })
-      pending = { input, preview }
+      pending = { input, preview, anchor }
     } catch (e) {
-      formError = String(e)
+      formError = { anchor, message: String(e) }
     }
   }
 
   function submitEdit(f: FormulaRef) {
     const i = f.args.findIndex((a, i) => a.kind !== 'other' && a.text !== draft[i])
     if (i < 0) {
-      editing = null
+      cancel()
       return
     }
     const formula = { file: f.fileId, index: f.index }
@@ -68,24 +82,27 @@
       arg.kind === 'string'
         ? { type: 'changeString', formula, argument: i, text: draft[i] }
         : { type: 'changeArgument', formula, argument: i, value: { kind: arg.kind as ValueInput['kind'], text: draft[i] } },
+      key(f),
     )
   }
 
   function submitAdd() {
     if (addFile === null) return
-    propose({ type: 'addFact', file: addFile, relation: addRelation, args: addArgs })
+    propose({ type: 'addFact', file: addFile, relation: addRelation, args: addArgs }, ADD)
   }
 
   async function confirm() {
     if (!pending) return
+    const anchor = pending.anchor
     try {
       const applied = await invoke<{ file: number; version: number }>('apply_form', { input: pending.input })
       lastFile = applied.file
       pending = null
       editing = null
+      if (anchor === ADD) resetAdd()
       refresh += 1
     } catch (e) {
-      formError = String(e)
+      formError = { anchor, message: String(e) }
       pending = null
     }
   }
@@ -94,19 +111,26 @@
     if (lastFile === null) return
     try {
       await invoke('undo', { file: lastFile })
+      lastFile = null
       refresh += 1
     } catch (e) {
-      formError = String(e)
+      formError = { anchor: ADD, message: String(e) }
     }
   }
 
-  $effect(() => {
+  function resetAdd() {
+    adding = false
     addFile = editableFiles[0]?.id ?? null
     addRelation = ''
     addArgs = [
       { kind: 'symbol', text: name },
       { kind: 'symbol', text: '' },
     ]
+  }
+
+  $effect(() => {
+    void name
+    resetAdd()
   })
 
   $effect(() => {
@@ -128,6 +152,10 @@
     return [...groups]
   }
 
+  function language(lang: string) {
+    return lang.replace(/Language$/, '')
+  }
+
   function fileName(path: string) {
     return path.split('/').pop()
   }
@@ -135,135 +163,166 @@
 
 {#snippet links(names: string[])}
   {#if names.length === 0}
-    <span class="none">None</span>
+    <span class="muted">None</span>
   {:else}
     {#each names as n (n)}
-      <button class="link" onclick={() => onNavigate(n)}>{n}</button>
+      <button class="plain link mono" onclick={() => onNavigate(n)}>{n}</button>
     {/each}
   {/if}
 {/snippet}
 
 {#snippet actions(f: FormulaRef)}
   {#if f.editable}
-    {#if f.args.some((a) => a.kind !== 'other')}
-      <button class="action" title="Edit" onclick={() => startEdit(f)}>✎</button>
-    {/if}
-    <button
-      class="action"
-      title="Delete"
-      onclick={() => propose({ type: 'deleteFact', formula: { file: f.fileId, index: f.index } })}>✕</button>
+    <span class="actions">
+      {#if f.args.some((a) => a.kind !== 'other')}
+        <button class="plain action" aria-label="Edit" title="Edit" onclick={() => startEdit(f)}>
+          <Pencil class="ico" />
+        </button>
+      {/if}
+      <button
+        class="plain action"
+        aria-label="Delete"
+        title="Delete"
+        onclick={() => propose({ type: 'deleteFact', formula: { file: f.fileId, index: f.index } }, key(f))}
+      >
+        <Trash class="ico" />
+      </button>
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet review(anchor: string)}
+  {#if pending?.anchor === anchor}
+    <div class="review">
+      <div class="diff mono">
+        {#each pending.preview.removed as l, i (i)}
+          <div class="diff-del">- {l}</div>
+        {/each}
+        {#each pending.preview.added as l, i (i)}
+          <div class="diff-add">+ {l}</div>
+        {/each}
+      </div>
+      <div class="buttons">
+        <button class="primary" onclick={confirm}>Apply</button>
+        <button onclick={() => (pending = null)}>Cancel</button>
+        <span class="muted small">
+          Line {pending.preview.line} · {Math.max(pending.preview.removed.length, pending.preview.added.length)} lines change
+        </span>
+      </div>
+    </div>
+  {/if}
+  {#if formError?.anchor === anchor}
+    <p class="error small">{formError.message}</p>
   {/if}
 {/snippet}
 
 {#snippet editor(f: FormulaRef)}
   <div class="edit">
-    {#each f.args as arg, i (i)}
-      {#if arg.kind === 'other'}
-        <span class="none">(nested term)</span>
-      {:else if arg.kind === 'string'}
-        <textarea rows="2" bind:value={draft[i]}></textarea>
-      {:else}
-        <input bind:value={draft[i]} />
-      {/if}
-    {/each}
-    <div>
-      <button onclick={() => submitEdit(f)}>Preview</button>
-      <button onclick={() => (editing = null)}>Cancel</button>
+    <div class="fields">
+      {#each f.args as arg, i (i)}
+        {#if arg.kind === 'other'}
+          <span class="muted small">(nested term)</span>
+        {:else if arg.kind === 'string'}
+          <textarea aria-label="Argument {i + 1}" rows="2" bind:value={draft[i]}></textarea>
+        {:else}
+          <input class="mono" aria-label="Argument {i + 1}" bind:value={draft[i]} />
+        {/if}
+      {/each}
     </div>
+    {#if pending?.anchor !== key(f)}
+      <div class="buttons">
+        <button onclick={() => submitEdit(f)}>Preview</button>
+        <button onclick={cancel}>Cancel</button>
+      </div>
+    {/if}
+    {@render review(key(f))}
   </div>
 {/snippet}
 
 {#snippet formulas(items: FormulaRef[])}
   {#each items as f, i (i)}
     <div class="formula">
-      <button class="location" onclick={() => onOpen({ file: f.fileId, line: f.line })}>
+      <button class="plain location mono" onclick={() => onOpen({ file: f.fileId, line: f.line })}>
         {fileName(f.file)}:{f.line}
       </button>
+      <div class="text">
+        {#if editing === key(f)}
+          {@render editor(f)}
+        {:else}
+          <Formula text={f.text} />
+          {@render review(key(f))}
+        {/if}
+      </div>
       {@render actions(f)}
-      {#if editing === key(f)}
-        {@render editor(f)}
-      {:else}
-        <pre>{f.text}</pre>
-      {/if}
     </div>
   {/each}
 {/snippet}
 
 {#snippet group(title: string, g: Group)}
-  <h3>{title} ({g.total})</h3>
+  <h3>{title} <span class="muted">{g.total}</span></h3>
   {#if g.total === 0}
-    <p class="none">None</p>
+    <p class="muted">None</p>
   {:else}
     {@render formulas(g.items)}
     {#if g.total > g.items.length}
-      <p class="none">The page shows {g.items.length} of {g.total} formulas.</p>
+      <p class="muted small">The page shows {g.items.length} of {g.total} formulas.</p>
     {/if}
   {/if}
 {/snippet}
 
-{#if pending}
-  <div class="preview">
-    <h3>Preview: line {pending.preview.line}</h3>
-    {#each pending.preview.removed as l, i (i)}
-      <pre class="removed">- {l}</pre>
-    {/each}
-    {#each pending.preview.added as l, i (i)}
-      <pre class="added">+ {l}</pre>
-    {/each}
-    <button onclick={confirm}>Apply</button>
-    <button onclick={() => (pending = null)}>Cancel</button>
-  </div>
-{/if}
-{#if formError}
-  <p class="error">{formError}</p>
-{/if}
-{#if lastFile !== null && !pending}
-  <p class="none">The change is applied. It is not saved. <button onclick={undoLast}>Undo</button></p>
-{/if}
-
 {#if error}
-  <p class="error">{error}</p>
+  <p class="error page-pad">{error}</p>
 {:else if page}
   <article>
-    <h1>{page.name}</h1>
+    <div class="title">
+      <h1 class="mono">{page.name}</h1>
+      {#each page.kinds as k (k)}<span class="badge">{k}</span>{/each}
+    </div>
+
+    {#if lastFile !== null && !pending}
+      <div class="applied">
+        <span>The change is applied. It is not saved.</span>
+        <button class="small" onclick={undoLast}>Undo</button>
+      </div>
+    {/if}
+
     {#if !page.exists}
       <p class="error">No formula in the project uses this term.</p>
     {:else}
-      <p class="kinds">{page.kinds.join(', ') || 'unknown kind'}</p>
-
       <section>
         <h2>Documentation</h2>
         {#if page.documentation.length === 0}
-          <p class="none">None</p>
+          <p class="muted">None</p>
         {/if}
-        {#each byLanguage(page.documentation) as [language, entries] (language)}
-          <h3>{language}</h3>
-          {#each entries as entry, i (i)}
-            <div class="doc">
-              {#if editing === key(entry.formula)}
-                {@render editor(entry.formula)}
-              {:else}
-                <p class:format={entry.relation === 'termFormat'}>{entry.text}</p>
-              {/if}
+        <div class="docs">
+          {#each byLanguage(page.documentation) as [lang, entries] (lang)}
+            {#each entries as entry, i (i)}
+              <span class="muted small">{i === 0 ? language(lang) : ''}</span>
+              <div>
+                {#if editing === key(entry.formula)}
+                  {@render editor(entry.formula)}
+                {:else}
+                  <p class:format={entry.relation === 'termFormat'}>{entry.text}</p>
+                  {@render review(key(entry.formula))}
+                {/if}
+              </div>
               {@render actions(entry.formula)}
-            </div>
+            {/each}
           {/each}
-        {/each}
+        </div>
       </section>
 
       <section>
         <h2>Hierarchy</h2>
-        {#if page.hierarchy}
-          <dl>
-            <dt>Parents ({page.hierarchy})</dt>
+        <dl>
+          {#if page.hierarchy}
+            <dt>Parents</dt>
             <dd>{@render links(page.parents)}</dd>
             <dt>All ancestors</dt>
             <dd>{@render links(page.ancestors)}</dd>
             <dt>Children</dt>
             <dd>{@render links(page.children)}</dd>
-          </dl>
-        {/if}
-        <dl>
+          {/if}
           {#if page.types.length > 0}
             <dt>Instance of</dt>
             <dd>{@render links(page.types)}</dd>
@@ -279,7 +338,7 @@
         <section>
           <h2>Signature</h2>
           {#if page.arity !== null}
-            <p>Arity: {page.arity}</p>
+            <p class="muted">Arity: {page.arity}</p>
           {/if}
           {@render formulas(page.signature)}
           {#if page.examples.length > 0}
@@ -299,60 +358,126 @@
 
     {#if editableFiles.length > 0}
       <section>
-        <h2>Add fact</h2>
-        <div class="add">
-          <select bind:value={addFile}>
-            {#each editableFiles as f (f.id)}
-              <option value={f.id}>{fileName(f.path)}</option>
+        {#if !adding}
+          <button class="dashed" onclick={() => (adding = true)}><Plus class="ico" /> Add Fact</button>
+        {:else}
+          <h2>Add Fact</h2>
+          <div class="add">
+            <label>
+              <span class="muted small">File</span>
+              <select bind:value={addFile}>
+                {#each editableFiles as f (f.id)}
+                  <option value={f.id}>{fileName(f.path)}</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              <span class="muted small">Relation</span>
+              <input class="mono" bind:value={addRelation} />
+            </label>
+            {#each addArgs as arg, i (i)}
+              <label>
+                <span class="muted small">Argument {i + 1}</span>
+                <span class="arg">
+                  <select aria-label="Kind of argument {i + 1}" bind:value={arg.kind}>
+                    <option value="symbol">symbol</option>
+                    <option value="string">string</option>
+                    <option value="number">number</option>
+                  </select>
+                  <input class="mono" bind:value={arg.text} />
+                </span>
+              </label>
             {/each}
-          </select>
-          <input placeholder="relation" bind:value={addRelation} />
-          {#each addArgs as arg, i (i)}
-            <select bind:value={arg.kind}>
-              <option value="symbol">symbol</option>
-              <option value="string">string</option>
-              <option value="number">number</option>
-            </select>
-            <input bind:value={arg.text} />
-          {/each}
-          <button onclick={() => (addArgs = [...addArgs, { kind: 'symbol', text: '' }])}>+ Argument</button>
-          {#if addArgs.length > 1}
-            <button onclick={() => (addArgs = addArgs.slice(0, -1))}>− Argument</button>
+            <div class="buttons">
+              <button
+                class="small"
+                aria-label="Add an argument"
+                onclick={() => (addArgs = [...addArgs, { kind: 'symbol', text: '' }])}><Plus class="ico" /> Argument</button
+              >
+              {#if addArgs.length > 1}
+                <button
+                  class="small"
+                  aria-label="Remove the last argument"
+                  onclick={() => (addArgs = addArgs.slice(0, -1))}><Minus class="ico" /> Argument</button
+                >
+              {/if}
+            </div>
+          </div>
+          {#if pending?.anchor !== ADD}
+            <div class="buttons">
+              <button onclick={submitAdd} disabled={!addRelation}>Preview</button>
+              <button onclick={resetAdd}>Cancel</button>
+            </div>
           {/if}
-          <button onclick={submitAdd} disabled={!addRelation}>Preview</button>
-        </div>
+          {@render review(ADD)}
+        {/if}
       </section>
     {/if}
   </article>
 {/if}
 
 <style>
+  article {
+    max-width: 920px;
+    padding: 20px 28px 40px;
+  }
+  .page-pad {
+    padding: 20px 28px;
+  }
+  .title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   h1 {
-    margin: 0;
-    font-size: 20px;
+    margin: 0 4px 0 0;
+    font-size: 22px;
+    font-weight: 600;
   }
   h2 {
-    font-size: 15px;
-    margin: 20px 0 8px;
-    border-bottom: 1px solid var(--border);
+    margin: 24px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
   }
   h3 {
-    font-size: 13px;
-    margin: 12px 0 4px;
-    color: var(--muted);
+    margin: 14px 0 4px;
+    font-size: 12px;
+    font-weight: 500;
   }
-  .kinds,
-  .none {
-    color: var(--muted);
+  p {
+    margin: 4px 0;
+  }
+  .small {
+    font-size: 12px;
   }
   .format {
     font-style: italic;
   }
+  .applied {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--surface-2);
+  }
+  .docs {
+    display: grid;
+    grid-template-columns: 96px 1fr auto;
+    gap: 6px 12px;
+    align-items: start;
+  }
+  .docs > span {
+    padding-top: 5px;
+  }
   dl {
     display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 4px 12px;
-    margin: 0 0 8px;
+    grid-template-columns: 120px 1fr;
+    gap: 6px 12px;
+    margin: 0;
   }
   dt {
     color: var(--muted);
@@ -361,72 +486,99 @@
     margin: 0;
   }
   .link {
-    border: none;
-    background: none;
-    padding: 0 8px 0 0;
-    color: #0969da;
-    cursor: pointer;
-    font: inherit;
-  }
-  .formula {
-    margin-bottom: 6px;
-  }
-  .location {
-    border: none;
-    background: none;
-    padding: 0;
-    font: inherit;
+    padding-right: 10px;
+    color: var(--accent);
     font-size: 12px;
-    color: var(--muted);
-    cursor: pointer;
   }
-  .location:hover {
+  .link:hover {
     text-decoration: underline;
   }
-  .action {
-    border: none;
-    background: none;
-    padding: 0 4px;
+  .formula {
+    display: grid;
+    grid-template-columns: 170px 1fr auto;
+    gap: 12px;
+    align-items: start;
+    padding: 2px 0;
+  }
+  .location {
+    justify-content: flex-start;
+    font-size: 12px;
+    line-height: 20px;
     color: var(--muted);
-    cursor: pointer;
+  }
+  .location:hover {
+    color: var(--accent);
+  }
+  .text {
+    min-width: 0;
+  }
+  .actions {
+    display: flex;
+    gap: 2px;
+    visibility: hidden;
+  }
+  .formula:hover .actions,
+  .docs:hover .actions,
+  .actions:focus-within {
+    visibility: visible;
+  }
+  .action {
+    width: 24px;
+    height: 24px;
+    color: var(--muted);
   }
   .action:hover {
     color: var(--text);
   }
-  .doc {
-    display: flex;
-    gap: 4px;
-    align-items: flex-start;
+  .edit {
+    padding: 8px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
   }
-  .doc p {
-    margin: 4px 0;
-  }
-  .edit,
-  .add {
+  .fields {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    align-items: center;
-    margin: 4px 0;
   }
-  .edit textarea {
+  .fields textarea {
     width: 100%;
   }
-  .preview {
-    border: 1px solid var(--border);
-    padding: 8px;
-    margin-bottom: 12px;
+  .review {
+    margin-top: 8px;
   }
-  .removed {
-    color: var(--error);
-  }
-  .added {
-    color: #1a7f37;
-  }
-  pre {
-    margin: 2px 0 0;
-    white-space: pre-wrap;
-    font-family: ui-monospace, monospace;
+  .diff {
+    border-radius: 4px;
+    overflow: hidden;
     font-size: 12px;
+  }
+  .diff > div {
+    padding: 3px 8px;
+    white-space: pre-wrap;
+  }
+  .buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .dashed {
+    margin-top: 24px;
+    border-style: dashed;
+    color: var(--muted);
+  }
+  .add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 12px;
+  }
+  .add label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .arg {
+    display: flex;
+    gap: 4px;
   }
 </style>

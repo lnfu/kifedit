@@ -5,10 +5,12 @@
 
   let {
     view,
+    selected,
     onSelect,
     onOpen,
   }: {
     view: string
+    selected: string | null
     onSelect: (name: string) => void
     onOpen: (location: Location) => void
   } = $props()
@@ -26,9 +28,9 @@
 {#if error}
   <p class="error">{error}</p>
 {:else}
-  <ul>
+  <ul role="tree">
     {#each roots as root (root.kind + root.id)}
-      <TreeNode {view} node={root} {onSelect} {onOpen} />
+      <TreeNode {view} node={root} depth={0} {selected} {onSelect} {onOpen} />
     {/each}
   </ul>
 {/if}
@@ -38,5 +40,8 @@
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+  .error {
+    padding: 0 12px;
   }
 </style>

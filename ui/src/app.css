@@ -1,100 +1,182 @@
+/* 設計代號：docs/ui-design.md 第 3 節 */
 :root {
-  --text: #1f2328;
-  --muted: #656d76;
-  --bg: #ffffff;
-  --border: #d0d7de;
-  --error: #cf222e;
-  font-family: system-ui, sans-serif;
-  font-size: 14px;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --border: #dde1e6;
+  --border-subtle: #eceef1;
+  --border-control: #d0d5dc;
+  --text: #1c2128;
+  --muted: #5b6472;
+  --accent: #1f5fd1;
+  --accent-hover: #174aa6;
+  --primary: #1f5fd1;
+  --selected: #dbe6fb;
+  --selected-text: #123d8a;
+  --error: #b42318;
+  --warning: #9a5b00;
+  --diff-del-bg: #fdecec;
+  --diff-del-text: #8f1d1d;
+  --diff-add-bg: #e6f4ea;
+  --diff-add-text: #14532d;
+  --syn-relation: #1f5fd1;
+  --syn-variable: #a1460a;
+  --syn-string: #1d6b3a;
+  --syn-comment: #6b7280;
+  --syn-keyword: #7c3aed;
+  --shadow: 0 6px 18px rgb(20 30 50 / 12%);
+
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  color-scheme: light;
+  font-family: var(--font-sans);
+  font-size: 13px;
   color: var(--text);
   background: var(--bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #e6edf3;
-    --muted: #8d96a0;
-    --bg: #0d1117;
-    --border: #30363d;
-    --error: #ff7b72;
-  }
+:root[data-theme='dark'] {
+  --bg: #0f1216;
+  --surface: #161a20;
+  --surface-2: #1b2027;
+  --border: #2a3038;
+  --border-subtle: #22272e;
+  --border-control: #353c46;
+  --text: #e6e9ee;
+  --muted: #9aa3af;
+  --accent: #6ea2ff;
+  --accent-hover: #9cc0ff;
+  --primary: #2f6fdc;
+  --selected: #1d3358;
+  --selected-text: #cfe0ff;
+  --error: #ff7b72;
+  --warning: #e3b341;
+  --diff-del-bg: #3a1d1f;
+  --diff-del-text: #ffb4ae;
+  --diff-add-bg: #173326;
+  --diff-add-text: #a6e3b8;
+  --syn-relation: #6ea2ff;
+  --syn-variable: #f0a35e;
+  --syn-string: #6fcf8e;
+  --syn-comment: #8b949e;
+  --syn-keyword: #c4a2ff;
+  --shadow: 0 6px 18px rgb(0 0 0 / 45%);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
 }
 
-main {
-  padding: 16px;
+a {
+  color: var(--accent);
 }
 
-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+a:hover {
+  color: var(--accent-hover);
 }
 
-.layout {
-  display: flex;
-  gap: 16px;
-  margin-top: 12px;
-}
-
-.layout {
-  gap: 0;
-}
-
-aside {
-  flex: none;
-  max-height: calc(100vh - 80px);
-  overflow: auto;
-  padding-right: 8px;
-}
-
-.resizer {
-  flex: none;
-  width: 6px;
-  margin-right: 12px;
-  cursor: col-resize;
-  border-left: 1px solid var(--border);
-}
-
-.resizer:hover {
-  border-left: 2px solid var(--muted);
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.tabs button {
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--muted);
-  padding: 2px 8px;
+button,
+input,
+select,
+textarea {
   font: inherit;
+  color: inherit;
+}
+
+button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--surface);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
-.tabs button.active {
-  color: var(--text);
-  border-color: var(--text);
+button:hover:not(:disabled) {
+  background: var(--surface-2);
 }
 
-.content {
-  flex: 1;
-  min-width: 0;
-  max-height: calc(100vh - 80px);
-  overflow: auto;
+button:disabled {
+  cursor: default;
+  color: var(--muted);
 }
 
-.project {
-  font-weight: 600;
+button.primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: #ffffff;
 }
 
-.hint {
+button.primary:hover:not(:disabled) {
+  background: var(--primary);
+  filter: brightness(1.1);
+}
+
+button.small {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* 只有圖示或文字、沒有外框的按鈕：樹、連結、動作圖示 */
+button.plain {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+button.plain:hover:not(:disabled) {
+  background: none;
+}
+
+button.icon {
+  width: 28px;
+  padding: 0;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+input,
+select {
+  height: 28px;
+  padding: 0 8px;
+}
+
+textarea {
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.muted {
   color: var(--muted);
 }
 
@@ -102,28 +184,48 @@ aside {
   color: var(--error);
 }
 
-table {
-  border-collapse: collapse;
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
 }
 
-th,
-td {
-  border-bottom: 1px solid var(--border);
-  padding: 4px 12px 4px 0;
-  text-align: left;
+.diff-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-text);
 }
 
-.number {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.diff-add {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-text);
 }
 
-.path {
-  font-family: ui-monospace, monospace;
+.syn-relation {
+  color: var(--syn-relation);
 }
 
-.plan {
-  border: 1px solid var(--border);
-  padding: 8px;
-  margin-bottom: 12px;
+.syn-variable {
+  color: var(--syn-variable);
+}
+
+.syn-string {
+  color: var(--syn-string);
+}
+
+.syn-keyword {
+  color: var(--syn-keyword);
+}
+
+.syn-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+.ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }

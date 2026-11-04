@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import SearchIcon from '@lucide/svelte/icons/search'
   import type { FormulaRef, Location, NameHit, QueryOutcome, TextHit } from './types'
 
   let { onNavigate, onOpen }: { onNavigate: (name: string) => void; onOpen: (location: Location) => void } =
@@ -7,6 +8,7 @@
 
   type Mode = 'names' | 'text' | 'query'
   let input: HTMLInputElement
+  let container: HTMLDivElement
   let value = $state('')
   let chosen = $state<Mode>('names')
   let open = $state(false)
@@ -80,28 +82,37 @@
     }
   }
 
+  function onPointer(event: PointerEvent) {
+    if (open && !container.contains(event.target as Node)) open = false
+  }
+
   function fileName(path: string) {
     return path.split('/').pop()
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onpointerdown={onPointer} />
 
-<div class="search">
-  <input
-    bind:this={input}
-    bind:value
-    placeholder="Search (Ctrl+P). Start with ( for a query."
-    onfocus={() => (open = true)}
-    onkeydown={(e) => e.key === 'Enter' && submit()}
-  />
-  <select bind:value={chosen} disabled={mode === 'query'}>
-    <option value="names">Names</option>
-    <option value="text">Text</option>
-    {#if mode === 'query'}
-      <option value="query">Query</option>
-    {/if}
-  </select>
+<div class="search" bind:this={container}>
+  <label class="box">
+    <SearchIcon class="ico muted" />
+    <input
+      bind:this={input}
+      bind:value
+      aria-label="Search"
+      placeholder="Search names, text, or (query ?X)"
+      onfocus={() => (open = true)}
+      onkeydown={(e) => e.key === 'Enter' && submit()}
+    />
+    <select aria-label="Search mode" bind:value={chosen} disabled={mode === 'query'}>
+      <option value="names">Names</option>
+      <option value="text">Text</option>
+      {#if mode === 'query'}
+        <option value="query">Query</option>
+      {/if}
+    </select>
+    <kbd class="muted">Ctrl P</kbd>
+  </label>
 
   {#if open && value.trim()}
     <div class="results">
@@ -109,8 +120,9 @@
         <p class="error">{error}</p>
       {:else if mode === 'names'}
         {#each names as hit (hit.name)}
-          <button class="row" onclick={() => pickName(hit.name)}>
-            {hit.name} <span class="muted">{hit.kinds.join(', ')}</span>
+          <button class="plain row" onclick={() => pickName(hit.name)}>
+            <span class="mono">{hit.name}</span>
+            <span class="kinds">{hit.kinds.join(', ')}</span>
           </button>
         {:else}
           <p class="muted">No names match.</p>
@@ -120,9 +132,9 @@
           <p class="muted">Push Enter to search the text in strings.</p>
         {:else}
           {#each texts as hit, i (i)}
-            <button class="row" onclick={() => openFormula(hit.formula)}>
-              <span class="muted">{fileName(hit.formula.file)}:{hit.formula.line}</span>
-              {hit.term ?? ''}
+            <button class="plain row" onclick={() => openFormula(hit.formula)}>
+              <span class="mono">{hit.term ?? ''}</span>
+              <span class="kinds mono">{fileName(hit.formula.file)}:{hit.formula.line}</span>
               <span class="snippet">{hit.text}</span>
             </button>
           {:else}
@@ -137,7 +149,7 @@
         <p class="muted">The query has no answers.</p>
       {:else}
         <p class="muted">Answers: {outcome.rows.length}</p>
-        <table>
+        <table class="mono">
           <thead>
             <tr>
               {#each outcome.columns as c (c)}<th>{c}</th>{/each}
@@ -150,7 +162,7 @@
                 {#each row.values as v, j (j)}
                   <td>
                     {#if /^[A-Za-z]/.test(v)}
-                      <button class="link" onclick={() => pickName(v)}>{v}</button>
+                      <button class="plain link" onclick={() => pickName(v)}>{v}</button>
                     {:else}
                       {v}
                     {/if}
@@ -158,7 +170,7 @@
                 {/each}
                 <td>
                   {#each row.support as f, j (j)}
-                    <button class="link muted" onclick={() => openFormula(f)}>
+                    <button class="plain link muted" onclick={() => openFormula(f)}>
                       {fileName(f.file)}:{f.line}
                     </button>
                   {/each}
@@ -172,77 +184,111 @@
   {/if}
 </div>
 
+
 <style>
   .search {
     position: relative;
+    width: 100%;
+    max-width: 560px;
+  }
+  .box {
+    height: 28px;
     display: flex;
-    gap: 4px;
-    flex: 1;
-    max-width: 640px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px 0 10px;
+    border: 1px solid var(--border-control);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  .box:focus-within {
+    border-color: var(--accent);
   }
   input {
     flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    outline: none;
+  }
+  select {
+    height: 22px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding-right: 6px;
   }
   .results {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 4px);
     left: 0;
     right: 0;
-    z-index: 10;
+    z-index: 30;
     max-height: 60vh;
     overflow: auto;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    padding: 4px;
+    padding: 4px 0;
+    background: var(--surface);
+    border: 1px solid var(--border-control);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
   }
   .row {
-    display: block;
     width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 12px;
+    padding: 4px 10px;
     text-align: left;
-    border: none;
-    background: none;
-    padding: 4px;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
   }
   .row:hover {
-    background: var(--border);
+    background: var(--surface-2);
+  }
+  .kinds {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 12px;
   }
   .snippet {
-    display: block;
+    flex-basis: 100%;
     font-size: 12px;
     color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .muted {
-    color: var(--muted);
-  }
-  .error {
-    color: var(--error);
-  }
   p {
-    margin: 4px;
+    margin: 4px 10px;
   }
   table {
-    border-collapse: collapse;
     width: 100%;
+    border-collapse: collapse;
     font-size: 12px;
   }
   th,
   td {
     text-align: left;
-    padding: 2px 6px;
-    border-bottom: 1px solid var(--border);
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  th {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    color: var(--muted);
   }
   .link {
-    border: none;
-    background: none;
-    padding: 0 6px 0 0;
-    font: inherit;
-    color: #0969da;
-    cursor: pointer;
+    padding-right: 8px;
+    color: var(--accent);
+  }
+  .link.muted {
+    color: var(--muted);
   }
 </style>

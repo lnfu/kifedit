@@ -5,10 +5,10 @@
   import { EditorView, keymap } from '@codemirror/view'
   import { setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
   import { forceParsing } from '@codemirror/language'
-  import { kif } from './kif'
+  import { kif, kifHighlight } from './kif'
   import type { Diagnostic, EditOutcome, FileContent, FileState } from './types'
 
-  let { content, line }: { content: FileContent; line: number } = $props()
+  let { content, line, onEdit }: { content: FileContent; line: number; onEdit?: () => void } = $props()
 
   let container: HTMLDivElement
   let view: EditorView | null = null
@@ -139,6 +139,27 @@
     }
   }
 
+  // 顏色取自 app.css 的設計代號（docs/ui-design.md 第 3 節）
+  const theme = EditorView.theme({
+    '&': { height: '100%', backgroundColor: 'var(--surface)', color: 'var(--text)' },
+    '.cm-content': { fontFamily: 'var(--font-mono)', fontSize: '13px', caretColor: 'var(--text)' },
+    '.cm-cursor': { borderLeftColor: 'var(--text)' },
+    '.cm-gutters': { backgroundColor: 'var(--surface)', color: 'var(--muted)', border: 'none' },
+    '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--selected) 40%, transparent)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--text)' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+      backgroundColor: 'var(--selected) !important',
+    },
+    '.cm-tooltip': {
+      backgroundColor: 'var(--surface)',
+      border: '1px solid var(--border-control)',
+      borderRadius: '6px',
+      boxShadow: 'var(--shadow)',
+    },
+    '.cm-diagnostic-error': { borderLeftColor: 'var(--error)' },
+    '.cm-lintRange-error': { textDecorationColor: 'var(--error)' },
+  })
+
   // 換檔案時重建編輯器狀態
   $effect(() => {
     const file = content.id
@@ -161,12 +182,15 @@
         ),
         basicSetup,
         kif,
+        kifHighlight,
+        theme,
         EditorState.readOnly.of(content.readOnly),
         EditorView.editable.of(!content.readOnly),
         EditorView.updateListener.of((update) => {
           for (const tr of update.transactions) {
             if (!tr.docChanged || tr.annotation(fromBackend)) continue
             const edits = toEdits(tr)
+            onEdit?.()
             queue = queue.then(() => send(file, edits))
           }
         }),
@@ -196,46 +220,58 @@
   })
 </script>
 
-<div class="file">
-  <span class="path">{content.path}</span>
-  {#if content.readOnly}
-    <span class="badge">read-only</span>
-  {:else}
-    <button onclick={save} disabled={version === savedVersion}>Save</button>
-    <button onclick={formatFormula} title="Ctrl+K Ctrl+F">Format Formula</button>
-    <button onclick={() => runBackend('format_file')} title="Shift+Alt+F">Format File</button>
-    {#if version !== savedVersion}
-      <span class="badge">not saved</span>
+<div class="editor-view">
+  <div class="toolbar">
+    <span class="path mono muted">{content.path}</span>
+    {#if content.readOnly}
+      <span class="badge">read-only</span>
+    {:else}
+      {#if version !== savedVersion}
+        <span class="badge">not saved</span>
+      {/if}
+      <span class="spacer"></span>
+      <button class="small" onclick={formatFormula} title="Ctrl+K Ctrl+F">Format Formula</button>
+      <button class="small" onclick={() => runBackend('format_file')} title="Shift+Alt+F">Format File</button>
+      <button class="small primary" onclick={save} disabled={version === savedVersion} title="Ctrl+S">Save</button>
     {/if}
-  {/if}
-</div>
-<div class="editor" bind:this={container}></div>
-<div class="status">
-  <span>Syntax errors: {errorCount}</span>
-  {#if resyncs > 0}
-    <span>Resynchronized with the backend: {resyncs} times.</span>
-  {/if}
-  {#if message}
-    <span>{message}</span>
-  {/if}
+  </div>
+  <div class="editor" bind:this={container}></div>
+  <div class="status">
+    <span class:error={errorCount > 0}>Syntax errors: {errorCount}</span>
+    {#if resyncs > 0}
+      <span>Resynchronized with the backend: {resyncs} times.</span>
+    {/if}
+    {#if message}
+      <span>{message}</span>
+    {/if}
+  </div>
 </div>
 
 <style>
-  .file {
+  .editor-view {
+    height: 100%;
     display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 4px;
+    flex-direction: column;
   }
-  .badge {
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .path {
     font-size: 12px;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .spacer {
+    flex: 1;
   }
   .editor {
-    height: calc(100vh - 160px);
-    border: 1px solid var(--border);
+    flex: 1;
+    min-height: 0;
   }
   .editor :global(.cm-editor) {
     height: 100%;
@@ -243,8 +279,9 @@
   .status {
     display: flex;
     gap: 16px;
+    padding: 2px 12px;
     font-size: 12px;
     color: var(--muted);
-    margin-top: 4px;
+    border-top: 1px solid var(--border-subtle);
   }
 </style>
