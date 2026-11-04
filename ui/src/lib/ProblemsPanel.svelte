@@ -94,6 +94,12 @@
     return s === 'error' ? 'Errors' : s === 'warning' ? 'Warnings' : 'Information'
   }
 
+  // 拖曳選取文字時也會觸發 click；有選取時不跳轉
+  function openItem(file: FileSummary, d: Diagnostic) {
+    if (window.getSelection()?.toString()) return
+    onOpen({ file: file.id, line: d.line })
+  }
+
   function fileName(path: string) {
     return path.split('/').pop() ?? path
   }
@@ -134,12 +140,19 @@
             </button>
           {:else}
             {@const { file, d } = row.item}
-            <button class="plain item" onclick={() => onOpen({ file: file.id, line: d.line })}>
+            <!-- 不用 <button>：按鈕內的文字無法選取 -->
+            <div
+              class="item"
+              role="button"
+              tabindex="0"
+              onclick={() => openItem(file, d)}
+              onkeydown={(e) => e.key === 'Enter' && onOpen({ file: file.id, line: d.line })}
+            >
               <span class="icon {d.severity}">{ICON[d.severity]}</span>
               <span class="code mono">{d.code}</span>
               <span class="message">{d.message}</span>
               <span class="where mono">{fileName(file.path)}:{d.line}:{d.column}</span>
-            </button>
+            </div>
           {/if}
         </div>
       {/each}
@@ -217,6 +230,8 @@
   }
   .item {
     padding-left: 32px;
+    cursor: pointer;
+    user-select: text;
   }
   .group:hover,
   .item:hover {
