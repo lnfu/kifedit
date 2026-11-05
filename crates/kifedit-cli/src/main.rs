@@ -161,7 +161,7 @@ fn fmt_targets(files: Vec<PathBuf>) -> Result<(Vec<PathBuf>, FormatOptions), Str
     let config = Config::load(&config_path).map_err(|e| e.to_string())?;
     let root = config_path.parent().unwrap_or(Path::new("."));
     let files = if files.is_empty() {
-        config.editable_paths(root)
+        config.editable_paths(root).map_err(|e| e.to_string())?
     } else {
         files
     };

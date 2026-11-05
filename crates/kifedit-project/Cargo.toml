@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+glob = "0.3.4"
 kifedit-check = { version = "0.1.0", path = "../kifedit-check" }
 kifedit-db = { version = "0.1.0", path = "../kifedit-db" }
 kifedit-reason = { version = "0.1.0", path = "../kifedit-reason" }

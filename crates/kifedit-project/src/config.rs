@@ -58,13 +58,71 @@ impl Config {
         Ok(config)
     }
 
-    pub fn editable_paths(&self, root: &Path) -> Vec<PathBuf> {
-        self.files.editable.iter().map(|p| root.join(p)).collect()
+    /// 展開 glob 後的 editable 檔；同一個檔案只出現一次
+    pub fn editable_paths(&self, root: &Path) -> Result<Vec<PathBuf>, ProjectError> {
+        expand(root, &self.files.editable)
     }
 
-    pub fn library_paths(&self, root: &Path) -> Vec<PathBuf> {
-        self.files.library.iter().map(|p| root.join(p)).collect()
+    pub fn library_paths(&self, root: &Path) -> Result<Vec<PathBuf>, ProjectError> {
+        expand(root, &self.files.library)
     }
+
+    /// 相對路徑 `name` 是否已被 editable 的某一項包含
+    pub fn editable_includes(&self, name: &Path) -> bool {
+        let options = glob::MatchOptions {
+            require_literal_separator: true,
+            ..Default::default()
+        };
+        self.files.editable.iter().any(|entry| {
+            let text = entry.to_string_lossy();
+            if is_pattern(&text) {
+                glob::Pattern::new(&text).is_ok_and(|p| p.matches_path_with(name, options))
+            } else {
+                entry == name
+            }
+        })
+    }
+}
+
+fn is_pattern(entry: &str) -> bool {
+    entry.contains(['*', '?', '['])
+}
+
+// 沒有 glob 字元的項目照原樣；pattern 的結果依路徑排序，只取檔案，比對不到時是錯誤
+fn expand(root: &Path, entries: &[PathBuf]) -> Result<Vec<PathBuf>, ProjectError> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for entry in entries {
+        let text = entry.to_string_lossy();
+        if !is_pattern(&text) {
+            let path = root.join(entry);
+            if !out.contains(&path) {
+                out.push(path);
+            }
+            continue;
+        }
+        let bad = |message: String| ProjectError::BadPattern {
+            pattern: text.to_string(),
+            message,
+        };
+        let full = format!("{}/{text}", glob::Pattern::escape(&root.to_string_lossy()));
+        let mut matched: Vec<PathBuf> = glob::glob(&full)
+            .map_err(|e| bad(e.to_string()))?
+            .filter_map(Result::ok)
+            .filter(|p| p.is_file())
+            .collect();
+        if matched.is_empty() {
+            return Err(ProjectError::NoMatch {
+                pattern: text.to_string(),
+            });
+        }
+        matched.sort();
+        for path in matched {
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -223,7 +281,7 @@ mathlib = false
     fn paths_are_relative_to_the_project_directory() {
         let config = Config::parse("[project]\nname = \"x\"\n[files]\neditable = [\"kb/a.kif\"]\n").unwrap();
         assert_eq!(
-            config.editable_paths(Path::new("/lab")),
+            config.editable_paths(Path::new("/lab")).unwrap(),
             [PathBuf::from("/lab/kb/a.kif")]
         );
     }

@@ -83,18 +83,63 @@ fn save_writes_the_document() {
 }
 
 #[test]
-fn missing_file_and_duplicate_file_are_errors() {
+fn missing_file_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let config = write_project(dir.path(), "editable = [\"missing.kif\"]\n");
     let error = Project::open(&config).unwrap_err();
     assert!(matches!(error, ProjectError::Read { .. }));
     assert!(error.to_string().starts_with("Cannot read the file"), "{error}");
 
-    let config = write_project(dir.path(), "library = [\"lab.kif\"]\neditable = [\"lab.kif\"]\n");
-    assert!(matches!(
-        Project::open(&config),
-        Err(ProjectError::DuplicateFile { .. })
-    ));
+}
+
+#[test]
+fn patterns_expand_in_path_order_and_editable_wins() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("kb/sub")).unwrap();
+    for name in ["kb/b.kif", "kb/a.kif", "kb/sub/c.kif", "kb/notes.txt"] {
+        fs::write(dir.path().join(name), "").unwrap();
+    }
+    let config = write_project(
+        dir.path(),
+        "library = [\"kb/**/*.kif\", \"kb/a.kif\"]\neditable = [\"kb/b.kif\", \"lab.kif\"]\n",
+    );
+    let project = Project::open(&config).unwrap();
+    let files: Vec<(String, FileRole)> = project
+        .files()
+        .iter()
+        .map(|f| (f.path.strip_prefix(dir.path()).unwrap().display().to_string(), f.role))
+        .collect();
+    assert_eq!(
+        files,
+        [
+            ("kb/a.kif".to_string(), FileRole::Library),
+            ("kb/sub/c.kif".to_string(), FileRole::Library),
+            ("kb/b.kif".to_string(), FileRole::Editable),
+            ("lab.kif".to_string(), FileRole::Editable),
+        ]
+    );
+}
+
+#[test]
+fn pattern_without_matches_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = write_project(dir.path(), "library = [\"sumo/*.kif\"]\neditable = [\"lab.kif\"]\n");
+    let error = Project::open(&config).unwrap_err();
+    assert!(matches!(&error, ProjectError::NoMatch { pattern } if pattern == "sumo/*.kif"), "{error}");
+}
+
+#[test]
+fn create_file_does_not_change_the_config_when_a_pattern_includes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = write_project(dir.path(), "library = [\"lib.kif\"]\neditable = [\"*.kif\"]\n");
+    let before = fs::read_to_string(&config).unwrap();
+    let mut project = Project::open(&config).unwrap();
+    project.create_file("new.kif").unwrap();
+    assert_eq!(fs::read_to_string(&config).unwrap(), before);
+
+    // 子目錄不在 *.kif 之內，要寫入
+    project.create_file("kb/other.kif").unwrap();
+    assert!(fs::read_to_string(&config).unwrap().contains("\"*.kif\", \"kb/other.kif\""));
 }
 
 #[test]

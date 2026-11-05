@@ -14,8 +14,11 @@ pub enum ProjectError {
         source: toml::de::Error,
     },
 
-    #[error("The file {} occurs more than one time in [files].", path.display())]
-    DuplicateFile { path: PathBuf },
+    #[error("The pattern in [files] is not correct: {pattern}: {message}")]
+    BadPattern { pattern: String, message: String },
+
+    #[error("The pattern in [files] matches no files: {pattern}")]
+    NoMatch { pattern: String },
 
     #[error("The project file {} names a check that does not exist in [checks]: {code}", path.display())]
     UnknownCheck { path: PathBuf, code: String },

@@ -48,19 +48,15 @@ impl Project {
         let config = Config::load(config_path)?;
         let root = config_path.parent().unwrap_or(Path::new(".")).to_owned();
 
-        let mut entries: Vec<(FileRole, PathBuf)> = Vec::new();
-        let roles = [
-            (FileRole::Library, config.library_paths(&root)),
-            (FileRole::Editable, config.editable_paths(&root)),
-        ];
-        for (role, paths) in roles {
-            for path in paths {
-                if entries.iter().any(|(_, p)| *p == path) {
-                    return Err(ProjectError::DuplicateFile { path });
-                }
-                entries.push((role, path));
-            }
-        }
+        // 同一個檔案同時在 library 與 editable 中時，editable 優先
+        let editable = config.editable_paths(&root)?;
+        let mut entries: Vec<(FileRole, PathBuf)> = config
+            .library_paths(&root)?
+            .into_iter()
+            .filter(|p| !editable.contains(p))
+            .map(|p| (FileRole::Library, p))
+            .collect();
+        entries.extend(editable.into_iter().map(|p| (FileRole::Editable, p)));
 
         let texts: Vec<String> = entries
             .par_iter()
@@ -213,17 +209,21 @@ impl Project {
         let mut document: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| config_error(e.to_string()))?;
         let files = document["files"].or_insert(toml_edit::table());
         let editable = files["editable"].or_insert(toml_edit::value(toml_edit::Array::new()));
-        editable
+        let editable = editable
             .as_array_mut()
-            .ok_or_else(|| config_error("[files] editable is not an array.".to_string()))?
-            .push(name.as_str());
+            .ok_or_else(|| config_error("[files] editable is not an array.".to_string()))?;
+        // 已被 editable 的 pattern 包含時不寫入
+        let included = self.config.editable_includes(relative);
+        if !included {
+            editable.push(name.as_str());
+        }
 
         let create = |e: io::Error| CreateFileError::Create { path: path.clone(), source: e };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(create)?;
         }
         std::fs::File::create_new(&path).map_err(create)?;
-        if let Err(e) = std::fs::write(&self.config_path, document.to_string()) {
+        if !included && let Err(e) = std::fs::write(&self.config_path, document.to_string()) {
             let _ = std::fs::remove_file(&path);
             return Err(config_error(e.to_string()));
         }
@@ -237,7 +237,9 @@ impl Project {
             input,
         });
         self.versions.push(0);
-        self.config.files.editable.push(PathBuf::from(&name));
+        if !included {
+            self.config.files.editable.push(PathBuf::from(&name));
+        }
         let inputs: Vec<File> = self.files.iter().map(|f| f.input).collect();
         self.input.set_files(&mut self.db).to(inputs);
         Ok(id)
