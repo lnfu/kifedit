@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "src-tauri"]
+members = ["crates/*"]
 
 # 依賴套件在 debug 建置中也最佳化，自己的 crate 仍可除錯
 [profile.dev.package."*"]
