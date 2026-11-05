@@ -31,6 +31,27 @@ pub enum QueryError {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum CreateFileError {
+    #[error("Write a file name.")]
+    EmptyName,
+
+    #[error("The file name must end with .kif.")]
+    NotKif,
+
+    #[error("The file must be in the project folder: {name}")]
+    OutsideProject { name: String },
+
+    #[error("The file exists: {}", path.display())]
+    Exists { path: PathBuf },
+
+    #[error("Cannot create the file {}: {source}", path.display())]
+    Create { path: PathBuf, source: io::Error },
+
+    #[error("Cannot change the project file {}: {message}", path.display())]
+    Config { path: PathBuf, message: String },
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum EditFileError {
     #[error("There is no file with this ID.")]
     UnknownFile,

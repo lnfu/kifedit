@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
+  import FilePlus from '@lucide/svelte/icons/file-plus'
   import FolderOpen from '@lucide/svelte/icons/folder-open'
   import Moon from '@lucide/svelte/icons/moon'
   import Sun from '@lucide/svelte/icons/sun'
@@ -180,14 +181,75 @@
     }
   }
 
+  // New File：在專案目錄下建立空白的 editable 檔，加進 project.toml
+  let newFileName = $state<string | null>(null)
+  let newFileError = $state<string | null>(null)
+  let treeVersion = $state(0)
+
+  function startNewFile() {
+    newFileName = ''
+    newFileError = null
+  }
+
+  async function createFile() {
+    if (newFileName === null || !summary) return
+    try {
+      const file = await invoke<FileSummary>('create_file', { name: newFileName })
+      summary.files.push(file)
+      newFileName = null
+      treeVersion += 1
+      await openLocation({ file: file.id, line: 1 })
+      pin(active)
+    } catch (e) {
+      newFileError = String(e)
+    }
+  }
+
+  function onNewFileKey(event: KeyboardEvent) {
+    if (event.key === 'Enter') createFile()
+    else if (event.key === 'Escape') newFileName = null
+  }
+
+  // 切到檔案分頁時向後端取最新內容：分頁存的是打開時的內容，之後的修改只在後端（§14.4）
+  async function activate(index: number) {
+    const tab = tabs[index]
+    if (!tab || index === active) return
+    const id = key(tab)
+    await reload(id)
+    const i = tabs.findIndex((t) => key(t) === id)
+    if (i >= 0) active = i
+  }
+
+  async function reload(id: string) {
+    const tab = tabs.find((t) => key(t) === id)
+    if (tab?.kind !== 'file') return
+    try {
+      const file = await invoke<FileContent>('file_text', { file: tab.file.id })
+      const i = tabs.findIndex((t) => key(t) === id)
+      if (i >= 0) tabs[i] = { ...tabs[i], file } as Tab
+    } catch (e) {
+      error = String(e)
+    }
+  }
+
+  // 離開編輯器時記住游標所在的行，切回來時捲到那一行
+  function rememberLine(file: number, line: number) {
+    for (const tab of tabs) {
+      if (tab.kind === 'file' && tab.file.id === file) tab.line = line
+    }
+  }
+
   function pin(index: number) {
     if (tabs[index]) tabs[index].preview = false
   }
 
   function close(index: number) {
+    const closingActive = index === active
     tabs.splice(index, 1)
     if (active >= tabs.length) active = Math.max(0, tabs.length - 1)
     else if (index < active) active -= 1
+    // 關掉目前的分頁時，旁邊的分頁會顯示出來，它的內容也要更新
+    if (closingActive && tabs[active]) reload(key(tabs[active]))
   }
 
   function title(tab: Tab) {
@@ -303,8 +365,31 @@
           {/each}
         </div>
         <div class="tree">
+          {#if view === 'files'}
+            <div class="file-actions">
+              <button class="small" onclick={startNewFile}><FilePlus class="ico" /> New File</button>
+            </div>
+            {#if newFileName !== null}
+              <div class="new-file">
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  class="mono"
+                  aria-label="New file name"
+                  placeholder="name.kif"
+                  autofocus
+                  bind:value={newFileName}
+                  onkeydown={onNewFileKey}
+                />
+                {#if newFileError}
+                  <p class="error">{newFileError}</p>
+                {:else}
+                  <p class="muted">Push Enter to create the file. Push Esc to cancel.</p>
+                {/if}
+              </div>
+            {/if}
+          {/if}
           {#key summary}
-            {#key view}
+            {#key `${view}:${treeVersion}`}
               <Tree {view} selected={selectedTerm} onSelect={navigate} onOpen={openLocation} />
             {/key}
           {/key}
@@ -320,7 +405,7 @@
                 class="plain"
                 role="tab"
                 aria-selected={i === active}
-                onclick={() => (active = i)}
+                onclick={() => activate(i)}
                 ondblclick={() => pin(i)}
                 onauxclick={(e) => e.button === 1 && close(i)}>{title(tab)}</button
               >
@@ -342,7 +427,13 @@
             {/key}
           {:else if current?.kind === 'file'}
             {#key current.file}
-              <Editor content={current.file} line={current.line} onEdit={() => pin(active)} onOpen={openLocation} />
+              <Editor
+                content={current.file}
+                line={current.line}
+                onEdit={() => pin(active)}
+                onOpen={openLocation}
+                onLeave={rememberLine}
+              />
             {/key}
           {:else}
             <div class="empty muted">
@@ -461,6 +552,21 @@
     flex: 1;
     overflow: auto;
     padding: 6px 0;
+  }
+  .file-actions {
+    padding: 4px 8px;
+  }
+  .new-file {
+    padding: 0 8px 6px;
+    font-size: 12px;
+  }
+  .new-file input {
+    width: 100%;
+    height: 26px;
+    font-size: 12px;
+  }
+  .new-file p {
+    margin: 4px 0 0;
   }
   .resizer {
     flex: none;

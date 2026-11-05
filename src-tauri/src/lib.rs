@@ -26,7 +26,8 @@ pub fn run() {
             commands::run_query,
             commands::format_file,
             commands::format_project_preview,
-            commands::format_project
+            commands::format_project,
+            commands::create_file
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -165,3 +165,42 @@ fn unknown_check_code_is_an_error() {
         Err(ProjectError::UnknownCheck { code, .. }) if code == "W999"
     ));
 }
+
+#[test]
+fn create_file_adds_an_editable_file_and_keeps_the_config_layout() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = write_project(
+        dir.path(),
+        "# library files\nlibrary = [\"lib.kif\"]\neditable = [\"lab.kif\"] # my files\n",
+    );
+    let mut project = Project::open(&config).unwrap();
+    let id = project.create_file("robots/arm.kif").unwrap();
+
+    assert_eq!(project.text(id), Some(""));
+    assert_eq!(project.file(id).unwrap().role, FileRole::Editable);
+    assert!(dir.path().join("robots/arm.kif").is_file());
+    let text = fs::read_to_string(&config).unwrap();
+    assert!(text.contains("# library files\n"));
+    assert!(text.contains("editable = [\"lab.kif\", \"robots/arm.kif\"] # my files"), "{text}");
+
+    // 新檔案可以編輯，重新開啟後仍在專案中
+    project.edit(id, &[TextEdit::insert(0.into(), "(instance Arm Camera)\n")]).unwrap();
+    project.save(id).unwrap();
+    let reopened = Project::open(&config).unwrap();
+    assert_eq!(reopened.files().len(), 3);
+    assert_eq!(reopened.text(FileId(2)), Some("(instance Arm Camera)\n"));
+}
+
+#[test]
+fn create_file_rejects_bad_names() {
+    use kifedit_project::CreateFileError;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut project = small_project(dir.path());
+    assert!(matches!(project.create_file(" "), Err(CreateFileError::EmptyName)));
+    assert!(matches!(project.create_file("notes.txt"), Err(CreateFileError::NotKif)));
+    assert!(matches!(project.create_file("../out.kif"), Err(CreateFileError::OutsideProject { .. })));
+    assert!(matches!(project.create_file("/tmp/out.kif"), Err(CreateFileError::OutsideProject { .. })));
+    assert!(matches!(project.create_file("lab.kif"), Err(CreateFileError::Exists { .. })));
+    assert_eq!(project.files().len(), 2);
+}

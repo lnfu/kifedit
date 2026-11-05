@@ -14,7 +14,14 @@
     line,
     onEdit,
     onOpen,
-  }: { content: FileContent; line: number; onEdit?: () => void; onOpen?: (location: Location) => void } = $props()
+    onLeave,
+  }: {
+    content: FileContent
+    line: number
+    onEdit?: () => void
+    onOpen?: (location: Location) => void
+    onLeave?: (file: number, line: number) => void // 關閉前回報游標所在的行
+  } = $props()
 
   let container: HTMLDivElement
   let view: EditorView | null = null
@@ -237,6 +244,7 @@
     })
     return () => {
       unlisten.then((stop) => stop())
+      if (view) onLeave?.(file, view.state.doc.lineAt(view.state.selection.main.head).number)
       view?.destroy()
       view = null
     }

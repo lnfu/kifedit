@@ -649,23 +649,39 @@ pub fn term_page(name: String, state: State<'_, AppState>) -> Result<crate::term
     Ok(crate::term_page::build(project, &name))
 }
 
+fn file_summary(project: &Project, file: &kifedit_project::SourceFile) -> FileSummary {
+    FileSummary {
+        id: file.id.0,
+        path: file.path.display().to_string(),
+        role: match file.role {
+            FileRole::Library => "library",
+            FileRole::Editable => "editable",
+        },
+        formulas: project
+            .index()
+            .file(file.id)
+            .map_or(0, |f| f.formulas().len()),
+        syntax_errors: project.parse(file.id).map_or(0, |p| p.errors.len()),
+    }
+}
+
+/// 在專案目錄下建立空白的 editable 檔，並寫回 project.toml
+#[tauri::command]
+pub fn create_file(name: String, state: State<'_, AppState>) -> Result<FileSummary, String> {
+    let mut session = state.session.lock().unwrap();
+    let project = session.project.as_mut().ok_or(NO_PROJECT)?;
+    let id = project.create_file(&name).map_err(|e| e.to_string())?;
+    let file = project.file(id).ok_or("There is no file with this ID.")?;
+    let summary = file_summary(project, file);
+    state.edited(id.0);
+    Ok(summary)
+}
+
 fn summarize(project: &Project, load_ms: f64) -> ProjectSummary {
     let files = project
         .files()
         .iter()
-        .map(|file| FileSummary {
-            id: file.id.0,
-            path: file.path.display().to_string(),
-            role: match file.role {
-                FileRole::Library => "library",
-                FileRole::Editable => "editable",
-            },
-            formulas: project
-                .index()
-                .file(file.id)
-                .map_or(0, |f| f.formulas().len()),
-            syntax_errors: project.parse(file.id).map_or(0, |p| p.errors.len()),
-        })
+        .map(|file| file_summary(project, file))
         .collect();
     ProjectSummary {
         name: project.config().project.name.clone(),
