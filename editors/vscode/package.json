@@ -25,6 +25,13 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "kif",
+        "scopeName": "source.kif",
+        "path": "./syntaxes/kif.tmLanguage.json"
+      }
+    ],
     "views": {
       "explorer": [
         {

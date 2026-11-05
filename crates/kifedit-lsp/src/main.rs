@@ -2,13 +2,16 @@ mod format;
 mod forms;
 mod line_index;
 mod query;
+mod semantic;
 mod term;
 mod term_page;
 mod tree;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use kifedit_project::{CONFIG_FILE_NAME, Checker, FileRole, Project, Severity, Update, find_config};
 use kifedit_sema::FileId;
@@ -29,6 +32,7 @@ struct Session {
 struct Backend {
     client: Client,
     session: Arc<Mutex<Session>>,
+    tokens_requests: Arc<AtomicU64>, // 每次要求更新語意標記時加 1，只有最後一次會送出
 }
 
 #[tower_lsp::async_trait]
@@ -57,6 +61,13 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                        legend: semantic::legend(),
+                        full: Some(SemanticTokensFullOptions::Bool(true)),
+                        ..Default::default()
+                    }),
+                ),
                 ..Default::default()
             },
             ..Default::default()
@@ -98,6 +109,7 @@ impl LanguageServer for Backend {
     async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.pop() {
             self.replace(&params.text_document.uri, change.text);
+            self.refresh_tokens_later();
         }
     }
 
@@ -122,6 +134,7 @@ impl LanguageServer for Backend {
                 for uri in removed {
                     self.client.publish_diagnostics(uri, Vec::new(), None).await;
                 }
+                self.refresh_tokens_later();
             }
             Err(message) => self.client.show_message(MessageType::ERROR, message).await,
         }
@@ -151,6 +164,19 @@ impl LanguageServer for Backend {
                 Ok(None)
             }
         }
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some(id) = file_id(project, &params.text_document.uri) else { return Ok(None) };
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: semantic::tokens(project, id),
+        })))
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -380,6 +406,18 @@ impl Backend {
         Ok(query::QueryOutcome::Answers { columns, rows })
     }
 
+    // 修改可能改變 taxonomy，其他已開啟文件的語意標記也要重算；連續輸入時只在停下後送出一次
+    fn refresh_tokens_later(&self) {
+        let request = self.tokens_requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let (requests, client) = (self.tokens_requests.clone(), self.client.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if requests.load(Ordering::SeqCst) == request {
+                let _ = client.semantic_tokens_refresh().await;
+            }
+        });
+    }
+
     fn replace(&self, uri: &Url, text: String) {
         let mut session = self.session.lock().unwrap();
         session.open.insert(uri.clone(), text.clone());
@@ -515,6 +553,7 @@ async fn main() {
     let (service, socket) = LspService::build(|client| Backend {
         client,
         session: Default::default(),
+        tokens_requests: Default::default(),
     })
     .custom_method("kifedit/treeChildren", Backend::tree_children)
     .custom_method("kifedit/query", Backend::query)

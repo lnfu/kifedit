@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SUO-KIF",
+  "scopeName": "source.kif",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#head" },
+    { "include": "#variable" },
+    { "include": "#number" },
+    { "include": "#paren" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.kif",
+      "match": ";.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.kif",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.kif", "match": "\\\\." }]
+    },
+    "head": {
+      "comment": "括號後的第一個字：邏輯運算子或關係名",
+      "patterns": [
+        {
+          "match": "(\\()\\s*(and|or|not|=>|<=>|forall|exists)(?=[\\s()\";]|$)",
+          "captures": {
+            "1": { "name": "punctuation.section.parens.begin.kif" },
+            "2": { "name": "keyword.control.kif" }
+          }
+        },
+        {
+          "match": "(\\()\\s*([^\\s()\";?@]+)",
+          "captures": {
+            "1": { "name": "punctuation.section.parens.begin.kif" },
+            "2": { "name": "entity.name.function.kif" }
+          }
+        }
+      ]
+    },
+    "variable": {
+      "name": "variable.other.kif",
+      "match": "[?@][^\\s()\";]+"
+    },
+    "number": {
+      "name": "constant.numeric.kif",
+      "match": "(?<=[\\s(]|^)[+-]?\\d+(\\.\\d+)?([eE][+-]?\\d+)?(?=[\\s()\";]|$)"
+    },
+    "paren": {
+      "patterns": [
+        { "name": "punctuation.section.parens.begin.kif", "match": "\\(" },
+        { "name": "punctuation.section.parens.end.kif", "match": "\\)" }
+      ]
+    }
+  }
+}

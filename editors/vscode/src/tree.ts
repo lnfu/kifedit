@@ -52,7 +52,24 @@ export function registerTrees(context: vscode.ExtensionContext, client: Language
     return tree;
   });
 
+  const refreshAll = () => trees.forEach((t) => t.refresh());
+
+  // 停止輸入或檔案變動後才更新，server 這時已收到修改
+  let timer: NodeJS.Timeout | undefined;
+  const refreshSoon = () => {
+    clearTimeout(timer);
+    timer = setTimeout(refreshAll, 500);
+  };
+  const watcher = vscode.workspace.createFileSystemWatcher("**/{*.kif,.kifignore,project.toml}");
+  watcher.onDidCreate(refreshSoon);
+  watcher.onDidDelete(refreshSoon);
+  watcher.onDidChange(refreshSoon);
+
   context.subscriptions.push(
-    vscode.commands.registerCommand("kifedit.refreshTrees", () => trees.forEach((t) => t.refresh())),
+    watcher,
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      if (event.document.languageId === "kif" && event.contentChanges.length > 0) refreshSoon();
+    }),
+    vscode.commands.registerCommand("kifedit.refreshTrees", refreshAll),
   );
 }
