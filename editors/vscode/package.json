@@ -1,0 +1,42 @@
+{
+  "name": "kifedit",
+  "displayName": "kifedit",
+  "description": "SUO-KIF language support",
+  "version": "0.0.1",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./out/extension.js",
+  "activationEvents": ["workspaceContains:**/project.toml"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kif",
+        "aliases": ["SUO-KIF", "kif"],
+        "extensions": [".kif"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "kifedit",
+      "properties": {
+        "kifedit.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the kifedit-lsp executable. If empty, the extension uses target/debug/kifedit-lsp in the kifedit repository."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p ."
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0"
+  }
+}

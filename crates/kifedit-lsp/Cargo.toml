@@ -1,0 +1,11 @@
+[package]
+name = "kifedit-lsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kifedit-project = { version = "0.1.0", path = "../kifedit-project" }
+kifedit-sema = { version = "0.1.0", path = "../kifedit-sema" }
+kifedit-syntax = { version = "0.1.0", path = "../kifedit-syntax" }
+tokio = { version = "1.54.1", features = ["full"] }
+tower-lsp = "0.20.0"
