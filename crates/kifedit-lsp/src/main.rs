@@ -7,9 +7,10 @@ mod term_page;
 mod tree;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use kifedit_project::{Checker, FileRole, Project, Severity, Update, find_config};
+use kifedit_project::{CONFIG_FILE_NAME, Checker, FileRole, Project, Severity, Update, find_config};
 use kifedit_sema::FileId;
 use kifedit_syntax::{TextEdit, TextRange};
 use line_index::LineIndex;
@@ -19,8 +20,10 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 #[derive(Default)]
 struct Session {
+    config: Option<PathBuf>,
     project: Option<Project>,
     checker: Option<Checker>,
+    open: HashMap<Url, String>, // 編輯器中開啟的文件與其內容；不在專案中的文件也記錄，加入專案時使用
 }
 
 struct Backend {
@@ -37,6 +40,7 @@ impl LanguageServer for Backend {
             .and_then(|f| f.first())
             .and_then(|f| f.uri.to_file_path().ok());
         if let Some(config) = root.as_deref().and_then(find_config) {
+            self.session.lock().unwrap().config = Some(config.clone());
             match tokio::task::spawn_blocking(move || Project::open(&config)).await {
                 Ok(Ok(project)) => self.session.lock().unwrap().project = Some(project),
                 Ok(Err(e)) => self.client.show_message(MessageType::ERROR, e.to_string()).await,
@@ -102,6 +106,24 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         if let Some(text) = uri.to_file_path().ok().and_then(|p| std::fs::read_to_string(p).ok()) {
             self.replace(&uri, text);
+        }
+        self.session.lock().unwrap().open.remove(&uri);
+    }
+
+    // 插件監看 *.kif、.kifignore 與 project.toml
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let config_changed = params
+            .changes
+            .iter()
+            .any(|c| c.uri.path().ends_with(&format!("/{CONFIG_FILE_NAME}")));
+        let outcome = if config_changed { self.reopen().await } else { self.refresh() };
+        match outcome {
+            Ok(removed) => {
+                for uri in removed {
+                    self.client.publish_diagnostics(uri, Vec::new(), None).await;
+                }
+            }
+            Err(message) => self.client.show_message(MessageType::ERROR, message).await,
         }
     }
 
@@ -279,7 +301,6 @@ impl Backend {
         let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
         Ok(project
             .files()
-            .iter()
             .filter(|f| f.role == FileRole::Editable)
             .map(|f| EditableFile { id: f.id.0, path: f.path.display().to_string() })
             .collect())
@@ -361,25 +382,90 @@ impl Backend {
 
     fn replace(&self, uri: &Url, text: String) {
         let mut session = self.session.lock().unwrap();
-        let Session { project, checker } = &mut *session;
+        session.open.insert(uri.clone(), text.clone());
+        let Session { project, checker, .. } = &mut *session;
         let Some(project) = project.as_mut() else { return };
         let Some(id) = file_id(project, uri) else { return };
-        let old = project.text(id).unwrap_or_default();
-        if old == text {
-            return;
-        }
-        let range = TextRange::new(0.into(), (old.len() as u32).into());
-        if project.edit(id, &[TextEdit::replace(range, text)]).is_ok() {
+        if set_text(project, id, text) {
             if let Some(checker) = checker {
                 checker.edited(id);
             }
         }
     }
+
+    /// 依磁碟與 .kifignore 更新專案的檔案；回傳被移除的檔案，以清除它們的診斷
+    fn refresh(&self) -> std::result::Result<Vec<Url>, String> {
+        let mut session = self.session.lock().unwrap();
+        let Session { project, checker, open, .. } = &mut *session;
+        let Some(project) = project.as_mut() else { return Ok(Vec::new()) };
+        let before: HashMap<FileId, PathBuf> = project.files().map(|f| (f.id, f.path.clone())).collect();
+        let changes = project.refresh_files().map_err(|e| e.to_string())?;
+        if changes == Default::default() {
+            return Ok(Vec::new());
+        }
+        use_open_texts(project, open, &changes.added);
+        if let Some(checker) = checker {
+            changes.added.iter().for_each(|&id| checker.edited(id));
+            checker.check_all();
+        }
+        Ok(changes
+            .removed
+            .iter()
+            .filter_map(|id| Url::from_file_path(before.get(id)?).ok())
+            .collect())
+    }
+
+    /// project.toml 改變時重新開啟專案。開啟失敗時保留原本的專案
+    async fn reopen(&self) -> std::result::Result<Vec<Url>, String> {
+        let Some(config) = self.session.lock().unwrap().config.clone() else { return Ok(Vec::new()) };
+        let mut project = tokio::task::spawn_blocking(move || Project::open(&config))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+
+        let mut session = self.session.lock().unwrap();
+        let ids: Vec<FileId> = project.files().map(|f| f.id).collect();
+        use_open_texts(&mut project, &session.open, &ids);
+        let removed = session
+            .project
+            .as_ref()
+            .map(|old| {
+                old.files()
+                    .filter(|f| project.file_id(&f.path).is_none())
+                    .filter_map(|f| Url::from_file_path(&f.path).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        session.project = Some(project);
+        if let Some(checker) = &session.checker {
+            checker.check_all();
+        }
+        Ok(removed)
+    }
+}
+
+/// 取代整份文字；文字沒有改變或檔案是唯讀時回傳 false
+fn set_text(project: &mut Project, id: FileId, text: String) -> bool {
+    let old = project.text(id).unwrap_or_default();
+    if old == text {
+        return false;
+    }
+    let range = TextRange::new(0.into(), (old.len() as u32).into());
+    project.edit(id, &[TextEdit::replace(range, text)]).is_ok()
+}
+
+// 新加入專案的檔案若已在編輯器中開啟，以編輯器的內容（可能未存檔）為準
+fn use_open_texts(project: &mut Project, open: &HashMap<Url, String>, ids: &[FileId]) {
+    for &id in ids {
+        let Some(path) = project.file(id).map(|f| f.path.clone()) else { continue };
+        let Some(text) = Url::from_file_path(&path).ok().and_then(|uri| open.get(&uri)) else { continue };
+        set_text(project, id, text.clone());
+    }
 }
 
 fn file_id(project: &Project, uri: &Url) -> Option<FileId> {
     let path = uri.to_file_path().ok()?;
-    project.files().iter().find(|f| f.path == path).map(|f| f.id)
+    project.file_id(&path)
 }
 
 fn to_lsp(session: &Session, update: Update) -> Option<(Url, Vec<Diagnostic>)> {

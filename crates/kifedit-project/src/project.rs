@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use kifedit_check::{Diagnostic, Severity, check_file};
@@ -36,9 +36,18 @@ pub struct Project {
     root: PathBuf,
     config: Config,
     pub(crate) db: RootDatabase,
-    pub(crate) files: Vec<SourceFile>,
+    // 以 FileId 為索引。刪除的檔案留下 None，FileId 不重複使用（同 rust-analyzer 的 VFS）
+    slots: Vec<Option<SourceFile>>,
+    ids: HashMap<PathBuf, FileId>, // 同一個路徑永遠是同一個 FileId
     input: ProjectInput,
     versions: Vec<u64>, // 每個檔案的版本號（§14.4），每次修改加 1
+}
+
+/// refresh_files 的結果
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct FileChanges {
+    pub added: Vec<FileId>,
+    pub removed: Vec<FileId>,
 }
 
 impl Project {
@@ -59,7 +68,7 @@ impl Project {
             .collect::<Result<_, ProjectError>>()?;
 
         let db = RootDatabase::default();
-        let files: Vec<SourceFile> = entries
+        let slots: Vec<Option<SourceFile>> = entries
             .into_iter()
             .zip(texts)
             .enumerate()
@@ -69,21 +78,24 @@ impl Project {
                 role,
                 input: File::new(&db, FileId(i as u32), text),
             })
+            .map(Some)
             .collect();
-        let input = ProjectInput::new(&db, files.iter().map(|f| f.input).collect());
+        let input = ProjectInput::new(&db, slots.iter().flatten().map(|f| f.input).collect());
 
         // 每個檔案一個工作：解析、建索引（§15.2 策略 1）；每個執行緒持有資料庫的複本
-        files.par_iter().for_each_with(db.clone(), |db, file| {
+        slots.par_iter().flatten().for_each_with(db.clone(), |db, file| {
             file_index(&*db, file.input);
         });
         project_taxonomy(&db, input);
 
-        let versions = vec![0; files.len()];
+        let ids = slots.iter().flatten().map(|f| (f.path.clone(), f.id)).collect();
+        let versions = vec![0; slots.len()];
         Ok(Self {
             root,
             config,
             db,
-            files,
+            slots,
+            ids,
             input,
             versions,
         })
@@ -97,12 +109,76 @@ impl Project {
         &self.config
     }
 
-    pub fn files(&self) -> &[SourceFile] {
-        &self.files
+    /// 專案目前的檔案，依 FileId 排序
+    pub fn files(&self) -> impl Iterator<Item = &SourceFile> {
+        self.slots.iter().flatten()
     }
 
     pub fn file(&self, id: FileId) -> Option<&SourceFile> {
-        self.files.get(id.0 as usize)
+        self.slots.get(id.0 as usize)?.as_ref()
+    }
+
+    pub fn file_id(&self, path: &Path) -> Option<FileId> {
+        let id = *self.ids.get(path)?;
+        self.file(id).map(|_| id)
+    }
+
+    /// 依目前的磁碟內容與 .kifignore 重新決定專案的檔案：加入新的 .kif 檔，移除已不存在或被排除的檔案，
+    /// 更新角色。已在專案中的檔案保留記憶體中的文字（可能有未存檔的修改）
+    pub fn refresh_files(&mut self) -> Result<FileChanges, ProjectError> {
+        let wanted: HashMap<PathBuf, FileRole> =
+            self.config.files(&self.root)?.into_iter().map(|(role, path)| (path, role)).collect();
+        let mut changes = FileChanges::default();
+
+        for slot in &mut self.slots {
+            let Some(file) = slot else { continue };
+            match wanted.get(&file.path) {
+                Some(&role) => file.role = role,
+                None => {
+                    changes.removed.push(file.id);
+                    *slot = None;
+                }
+            }
+        }
+        let mut added: Vec<(&PathBuf, FileRole)> = wanted
+            .iter()
+            .filter(|(path, _)| self.file_id(path).is_none())
+            .map(|(path, &role)| (path, role))
+            .collect();
+        added.sort_by_key(|(path, _)| *path);
+        for (path, role) in added {
+            let text = std::fs::read_to_string(path).map_err(|source| ProjectError::Read {
+                path: path.clone(),
+                source,
+            })?;
+            let id = match self.ids.get(path) {
+                Some(&id) => id,
+                None => {
+                    let id = FileId(self.slots.len() as u32);
+                    self.slots.push(None);
+                    self.versions.push(0);
+                    self.ids.insert(path.clone(), id);
+                    id
+                }
+            };
+            self.slots[id.0 as usize] = Some(SourceFile {
+                id,
+                path: path.clone(),
+                role,
+                input: File::new(&self.db, id, text),
+            });
+            changes.added.push(id);
+        }
+
+        if !changes.added.is_empty() || !changes.removed.is_empty() {
+            for &id in changes.added.iter().chain(&changes.removed) {
+                self.versions[id.0 as usize] += 1;
+            }
+            let inputs: Vec<File> = self.files().map(|f| f.input).collect();
+            let project = self.input;
+            project.set_files(&mut self.db).to(inputs);
+        }
+        Ok(changes)
     }
 
     pub fn text(&self, id: FileId) -> Option<&str> {
@@ -147,14 +223,16 @@ impl Project {
         Snapshot {
             db: self.db.clone(),
             input: self.input,
-            files: self
-                .files
+            slots: self
+                .slots
                 .iter()
-                .map(|f| SnapshotFile {
-                    id: f.id,
-                    role: f.role,
-                    input: f.input,
-                    version: self.version(f.id),
+                .map(|slot| {
+                    slot.as_ref().map(|f| SnapshotFile {
+                        id: f.id,
+                        role: f.role,
+                        input: f.input,
+                        version: self.version(f.id),
+                    })
                 })
                 .collect(),
             checks: self.config.checks.clone(),
@@ -164,7 +242,7 @@ impl Project {
     /// 平行檢查所有檔案，結果留在資料庫中；之後的 diagnostics 直接取用
     pub fn check_all(&self) {
         let project = self.input;
-        let inputs: Vec<File> = self.files.iter().map(|f| f.input).collect();
+        let inputs: Vec<File> = self.files().map(|f| f.input).collect();
         inputs.into_par_iter().for_each_with(self.db.clone(), |db, file| {
             check_file(&*db, project, file);
         });
@@ -216,22 +294,26 @@ pub struct SnapshotFile {
 pub struct Snapshot {
     db: RootDatabase,
     input: ProjectInput,
-    files: Vec<SnapshotFile>,
+    slots: Vec<Option<SnapshotFile>>,
     checks: BTreeMap<String, Severity>,
 }
 
 impl Snapshot {
-    pub fn files(&self) -> &[SnapshotFile] {
-        &self.files
+    pub fn files(&self) -> impl Iterator<Item = &SnapshotFile> {
+        self.slots.iter().flatten()
+    }
+
+    pub fn file(&self, id: FileId) -> Option<&SnapshotFile> {
+        self.slots.get(id.0 as usize)?.as_ref()
     }
 
     pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
-        let Some(file) = self.files.get(id.0 as usize) else { return Vec::new() };
+        let Some(file) = self.file(id) else { return Vec::new() };
         with_overrides(&self.checks, check_file(&self.db, self.input, file.input))
     }
 
     pub fn text(&self, id: FileId) -> Option<&str> {
-        Some(self.files.get(id.0 as usize)?.input.text(&self.db))
+        Some(self.file(id)?.input.text(&self.db))
     }
 
     /// 為已取得的診斷加上行、欄與 related 的位置

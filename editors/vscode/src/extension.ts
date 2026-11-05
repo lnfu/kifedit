@@ -16,6 +16,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const serverOptions: ServerOptions = { command };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "kif" }],
+    // 新增、刪除 .kif 檔，或修改 .kifignore、project.toml 時通知 server
+    synchronize: {
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.kif,.kifignore,project.toml}"),
+    },
     // hover 裡的 Open Term Page 連結
     markdown: { isTrusted: { enabledCommands: ["kifedit.openTermPage"] } },
   };

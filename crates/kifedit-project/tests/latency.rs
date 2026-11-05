@@ -44,7 +44,6 @@ fn typing_to_diagnostics_is_within_300_ms() {
         .lock()
         .unwrap()
         .files()
-        .iter()
         .find(|f| f.path.ends_with("mm.kif"))
         .unwrap()
         .id;
@@ -59,7 +58,7 @@ fn typing_to_diagnostics_is_within_300_ms() {
 
     // 先完成第一次完整檢查
     checker.check_all();
-    let count = project.lock().unwrap().files().len();
+    let count = project.lock().unwrap().files().count();
     for _ in 0..count {
         receiver.recv_timeout(Duration::from_secs(60)).unwrap();
     }

@@ -27,7 +27,7 @@ fn opens_library_and_editable_files() {
     let dir = tempfile::tempdir().unwrap();
     let project = small_project(dir.path());
 
-    let roles: Vec<_> = project.files().iter().map(|f| f.role).collect();
+    let roles: Vec<_> = project.files().map(|f| f.role).collect();
     assert_eq!(roles, [FileRole::Library, FileRole::Editable]);
     assert_eq!(project.index().formula_count(), 3);
 
@@ -81,11 +81,12 @@ fn missing_file_is_an_error() {
 }
 
 fn paths(project: &Project, root: &Path) -> Vec<(String, FileRole)> {
-    project
+    let mut out: Vec<_> = project
         .files()
-        .iter()
         .map(|f| (f.path.strip_prefix(root).unwrap_or(&f.path).display().to_string(), f.role))
-        .collect()
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 
 #[test]
@@ -133,9 +134,9 @@ fn readonly_directory_can_be_outside_the_project() {
     fs::write(outside.path().join("Merge.kif"), LIBRARY).unwrap();
     let config = write_project(dir.path(), &format!("readonly = [{:?}]\n", outside.path()));
     let project = Project::open(&config).unwrap();
-    let merge = project.files().iter().find(|f| f.path.ends_with("Merge.kif")).unwrap();
+    let merge = project.files().find(|f| f.path.ends_with("Merge.kif")).unwrap();
     assert_eq!(merge.role, FileRole::Library);
-    assert_eq!(project.files().len(), 3);
+    assert_eq!(project.files().count(), 3);
 }
 
 #[test]
@@ -183,7 +184,7 @@ fn opens_the_example_project_with_sumo() {
     );
     eprintln!(
         "Opened {} files with {} formulas in {elapsed:?}.",
-        project.files().len(),
+        project.files().count(),
         project.index().formula_count()
     );
 }
@@ -214,4 +215,51 @@ fn unknown_check_code_is_an_error() {
         Project::open(&config),
         Err(ProjectError::UnknownCheck { code, .. }) if code == "W999"
     ));
+}
+
+#[test]
+fn refresh_files_adds_and_removes_files_and_keeps_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut project = small_project(dir.path());
+    let lab = project.file_id(&dir.path().join("lab.kif")).unwrap();
+
+    fs::write(dir.path().join("new.kif"), "(instance Arm Camera)\n").unwrap();
+    let changes = project.refresh_files().unwrap();
+    assert!(changes.removed.is_empty());
+    let [new] = changes.added[..] else { panic!("{changes:?}") };
+    assert_eq!(project.file(new).unwrap().role, FileRole::Editable);
+    let name = |p: &Project, s| p.interner().get(s).unwrap();
+    assert_eq!(
+        project.taxonomy().instance_of(name(&project, "Arm")),
+        [name(&project, "Camera")]
+    );
+
+    // 刪除後其他檔案的 ID 不變；同一個路徑再出現時拿回原本的 ID
+    fs::remove_file(dir.path().join("new.kif")).unwrap();
+    assert_eq!(project.refresh_files().unwrap().removed, [new]);
+    assert!(project.file(new).is_none());
+    assert_eq!(project.file_id(&dir.path().join("lab.kif")), Some(lab));
+    assert!(project.taxonomy().instance_of(name(&project, "Arm")).is_empty());
+
+    fs::write(dir.path().join("new.kif"), "").unwrap();
+    assert_eq!(project.refresh_files().unwrap().added, [new]);
+}
+
+#[test]
+fn refresh_files_keeps_unsaved_text_and_follows_kifignore() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut project = small_project(dir.path());
+    let lab = project.file_id(&dir.path().join("lab.kif")).unwrap();
+    project.edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")]).unwrap();
+
+    fs::write(dir.path().join(".kifignore"), "lab.kif\n").unwrap();
+    assert_eq!(project.refresh_files().unwrap().removed, [lab]);
+
+    fs::remove_file(dir.path().join(".kifignore")).unwrap();
+    assert_eq!(project.refresh_files().unwrap().added, [lab]);
+    assert_eq!(project.text(lab), Some(EDITABLE));
+
+    project.edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")]).unwrap();
+    assert_eq!(project.refresh_files().unwrap(), Default::default());
+    assert_eq!(project.text(lab).unwrap(), format!("; unsaved\n{EDITABLE}"));
 }

@@ -127,10 +127,9 @@ fn check_round(
     sent: &mut HashMap<FileId, Vec<Diagnostic>>,
     sink: &mut impl FnMut(Update),
 ) {
-    let files = snapshot.files();
     let rest = |role| {
-        files
-            .iter()
+        snapshot
+            .files()
             .filter(move |f| f.role == role && !first.contains(&f.id))
             .map(|f| f.id)
     };
@@ -140,7 +139,7 @@ fn check_round(
         .chain(rest(FileRole::Editable))
         .chain(rest(FileRole::Library));
     for id in order {
-        let Some(file) = files.get(id.0 as usize) else { continue };
+        let Some(file) = snapshot.file(id) else { continue };
         let diagnostics = snapshot.diagnostics(id);
         if !first.contains(&id) && sent.get(&id) == Some(&diagnostics) {
             continue;

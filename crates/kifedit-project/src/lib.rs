@@ -16,4 +16,4 @@ pub use kifedit_check::{Diagnostic, RULES, Rule, Severity};
 pub use locate::{LocatedDiagnostic, Location};
 pub use forms::{FormEdit, FormError, FormValue};
 pub use db::RootDatabase;
-pub use project::{FileRole, Project, Snapshot, SnapshotFile, SourceFile};
+pub use project::{FileChanges, FileRole, Project, Snapshot, SnapshotFile, SourceFile};
