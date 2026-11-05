@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
@@ -7,13 +8,18 @@ import { registerTrees } from "./tree";
 
 let client: LanguageClient | undefined;
 
-export async function activate(context: vscode.ExtensionContext) {
+// 依序使用：kifedit.serverPath 設定、插件內附的 server、開發時專案根目錄的 target/debug
+function serverCommand(context: vscode.ExtensionContext): string {
   const configured = vscode.workspace.getConfiguration("kifedit").get<string>("serverPath");
-  // 開發時：editors/vscode → 專案根目錄的 target/debug
-  const command =
-    configured || path.join(context.extensionPath, "..", "..", "target", "debug", "kifedit-lsp");
+  if (configured) return configured;
+  const name = process.platform === "win32" ? "kifedit-lsp.exe" : "kifedit-lsp";
+  const bundled = path.join(context.extensionPath, "server", name);
+  if (fs.existsSync(bundled)) return bundled;
+  return path.join(context.extensionPath, "..", "..", "target", "debug", name);
+}
 
-  const serverOptions: ServerOptions = { command };
+export async function activate(context: vscode.ExtensionContext) {
+  const serverOptions: ServerOptions = { command: serverCommand(context) };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "kif" }],
     // 新增、刪除 .kif 檔，或修改 .kifignore、project.toml 時通知 server
