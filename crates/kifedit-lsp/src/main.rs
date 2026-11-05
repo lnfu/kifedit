@@ -1,5 +1,6 @@
 mod format;
 mod line_index;
+mod query;
 mod term;
 mod tree;
 
@@ -257,6 +258,38 @@ impl Backend {
         Ok(locations(project, first).into_iter().next())
     }
 
+    async fn query(&self, params: query::QueryParams) -> Result<query::QueryOutcome<Location>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else {
+            return Ok(query::QueryOutcome::Error { message: "There is no open project.".into() });
+        };
+        let (columns, rows) = match query::run(project, &params.query) {
+            query::QueryOutcome::Answers { columns, rows } => (columns, rows),
+            query::QueryOutcome::NeedsProver { message } => {
+                return Ok(query::QueryOutcome::NeedsProver { message });
+            }
+            query::QueryOutcome::Error { message } => {
+                return Ok(query::QueryOutcome::Error { message });
+            }
+        };
+        let ranges = rows.iter().flat_map(|r| r.support.iter().map(|s| s.location)).collect();
+        let mut places = each_location(project, ranges).into_iter();
+        let rows = rows
+            .into_iter()
+            .map(|row| query::Row {
+                values: row.values,
+                support: row
+                    .support
+                    .into_iter()
+                    .filter_map(|s| {
+                        Some(query::Support { text: s.text, location: places.next()?? })
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok(query::QueryOutcome::Answers { columns, rows })
+    }
+
     fn replace(&self, uri: &Url, text: String) {
         let mut session = self.session.lock().unwrap();
         let Session { project, checker } = &mut *session;
@@ -330,6 +363,7 @@ async fn main() {
     })
     .custom_method("kifedit/treeChildren", Backend::tree_children)
     .custom_method("kifedit/termLocation", Backend::term_location)
+    .custom_method("kifedit/query", Backend::query)
     .finish();
     Server::new(tokio::io::stdin(), tokio::io::stdout(), socket)
         .serve(service)

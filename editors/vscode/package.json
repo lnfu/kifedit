@@ -20,15 +20,21 @@
       "explorer": [
         { "id": "kifedit.classes", "name": "KIF Classes" },
         { "id": "kifedit.relations", "name": "KIF Relations" },
-        { "id": "kifedit.attributes", "name": "KIF Attributes" }
+        { "id": "kifedit.attributes", "name": "KIF Attributes" },
+        { "id": "kifedit.query", "name": "KIF Query" }
       ]
     },
     "commands": [
-      { "command": "kifedit.refreshTrees", "title": "Refresh", "icon": "$(refresh)" }
+      { "command": "kifedit.refreshTrees", "title": "Refresh", "icon": "$(refresh)" },
+      { "command": "kifedit.runQuery", "title": "kifedit: Run Query", "icon": "$(search)" }
+    ],
+    "keybindings": [
+      { "command": "kifedit.runQuery", "key": "ctrl+alt+q", "when": "editorLangId == kif" }
     ],
     "menus": {
       "view/title": [
-        { "command": "kifedit.refreshTrees", "when": "view =~ /^kifedit\\./", "group": "navigation" }
+        { "command": "kifedit.refreshTrees", "when": "view =~ /^kifedit\\.(classes|relations|attributes)$/", "group": "navigation" },
+        { "command": "kifedit.runQuery", "when": "view == kifedit.query", "group": "navigation" }
       ]
     },
     "configuration": {
