@@ -32,14 +32,22 @@ fn typing_to_diagnostics_is_within_300_ms() {
     fs::write(
         &config,
         format!(
-            "[project]\nname = \"latency\"\n\n[files]\nlibrary = [{}]\neditable = [{lab:?}]\n",
+            "[project]\nname = \"latency\"\n\n[files]\nreadonly = [{}]\n",
             library.join(", ")
         ),
     )
     .unwrap();
+    fs::copy(&lab, dir.path().join("mm.kif")).unwrap();
 
     let project = Arc::new(Mutex::new(Project::open(&config).unwrap()));
-    let lab_id = project.lock().unwrap().files().last().unwrap().id;
+    let lab_id = project
+        .lock()
+        .unwrap()
+        .files()
+        .iter()
+        .find(|f| f.path.ends_with("mm.kif"))
+        .unwrap()
+        .id;
     let (sender, receiver) = mpsc::channel::<Update>();
     let shared = project.clone();
     let checker = Checker::spawn(

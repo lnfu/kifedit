@@ -18,9 +18,10 @@ fn open() -> Option<(tempfile::TempDir, Project)> {
     let config = dir.path().join("project.toml");
     fs::write(
         &config,
-        format!("[project]\nname = \"gate\"\n\n[files]\neditable = [{lab:?}]\n"),
+        "[project]\nname = \"gate\"\n",
     )
     .unwrap();
+    fs::copy(&lab, dir.path().join("mm.kif")).unwrap();
     let project = Project::open(&config).unwrap();
     Some((dir, project))
 }

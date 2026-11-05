@@ -13,11 +13,11 @@ fn kifedit(dir: &Path, args: &[&str]) -> Output {
 const LIBRARY: &str = "(instance instance BinaryPredicate)\n(instance BinaryPredicate Entity)\n(instance part BinaryPredicate)\n(domain part 1 Object)\n(domain part 2 Object)\n(subclass Object Entity)\n";
 
 fn project(dir: &Path, lab: &str, checks: &str) {
-    fs::write(dir.join("lib.kif"), LIBRARY).unwrap();
+    fs::write(dir.join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.join("lab.kif"), lab).unwrap();
     fs::write(
         dir.join("project.toml"),
-        format!("[project]\nname = \"test\"\n\n[files]\nlibrary = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n\n[checks]\n{checks}"),
+        format!("[project]\nname = \"test\"\n\n[files]\nreadonly = [\"base.kif\"]\n\n[checks]\n{checks}"),
     )
     .unwrap();
 }
@@ -58,7 +58,7 @@ fn library_problems_show_only_with_all() {
     let without: Vec<String> = stdout(&kifedit(dir.path(), &["check"]));
     let with: Vec<String> = stdout(&kifedit(dir.path(), &["check", "--all"]));
     assert!(without.iter().all(|l| l.starts_with("lab.kif:")));
-    assert!(with.iter().any(|l| l.starts_with("lib.kif:")));
+    assert!(with.iter().any(|l| l.starts_with("base.kif:")));
 }
 
 #[test]

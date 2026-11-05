@@ -24,7 +24,7 @@ fn query_text_is_parsed_and_evaluated() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("lab.kif"), "(subclass Camera Device)\n(instance HeadCamera Camera)\n").unwrap();
     let config = dir.path().join("project.toml");
-    fs::write(&config, "[project]\nname = \"test\"\n\n[files]\neditable = [\"lab.kif\"]\n").unwrap();
+    fs::write(&config, "[project]\nname = \"test\"\n").unwrap();
     let project = Project::open(&config).unwrap();
 
     assert_eq!(answers_for(&project, "(instance ?X Device)"), ["HeadCamera"]);
@@ -47,11 +47,12 @@ fn query_speed_on_the_example_project() {
     fs::write(
         &config,
         format!(
-            "[project]\nname = \"mm\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
-            library[0], library[1], lab
+            "[project]\nname = \"mm\"\n\n[files]\nreadonly = [{:?}, {:?}]\n",
+            library[0], library[1]
         ),
     )
     .unwrap();
+    fs::copy(&lab, dir.path().join("mm.kif")).unwrap();
     let project = Project::open(&config).unwrap();
 
     assert!(answers_for(&project, "(instance ?X Robot)").contains(&"MyStretch4".to_string()));

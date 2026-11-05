@@ -5,7 +5,7 @@ use kifedit_check::Severity;
 use kifedit_syntax::FormatOptions;
 use serde::Deserialize;
 
-use crate::ProjectError;
+use crate::{FileRole, ProjectError};
 
 pub const CONFIG_FILE_NAME: &str = "project.toml";
 
@@ -58,29 +58,15 @@ impl Config {
         Ok(config)
     }
 
-    /// 展開 glob 後的 editable 檔；同一個檔案只出現一次
-    pub fn editable_paths(&self, root: &Path) -> Result<Vec<PathBuf>, ProjectError> {
-        expand(root, &self.files.editable)
-    }
-
-    pub fn library_paths(&self, root: &Path) -> Result<Vec<PathBuf>, ProjectError> {
-        expand(root, &self.files.library)
-    }
-
-    /// 相對路徑 `name` 是否已被 editable 的某一項包含
-    pub fn editable_includes(&self, name: &Path) -> bool {
-        let options = glob::MatchOptions {
-            require_literal_separator: true,
-            ..Default::default()
-        };
-        self.files.editable.iter().any(|entry| {
-            let text = entry.to_string_lossy();
-            if is_pattern(&text) {
-                glob::Pattern::new(&text).is_ok_and(|p| p.matches_path_with(name, options))
-            } else {
-                entry == name
-            }
-        })
+    /// 專案的所有檔案，依路徑排序：專案目錄下的 .kif 檔（套用 .kifignore），
+    /// 加上 readonly 列出的檔案。readonly 可以在專案目錄外，明確列出時不受 .kifignore 影響
+    pub fn files(&self, root: &Path) -> Result<Vec<(FileRole, PathBuf)>, ProjectError> {
+        let mut files: BTreeMap<PathBuf, FileRole> =
+            kif_files(root).into_iter().map(|p| (p, FileRole::Editable)).collect();
+        for path in expand(root, &self.files.readonly)? {
+            files.insert(path, FileRole::Library);
+        }
+        Ok(files.into_iter().map(|(path, role)| (role, path)).collect())
     }
 }
 
@@ -88,14 +74,32 @@ fn is_pattern(entry: &str) -> bool {
     entry.contains(['*', '?', '['])
 }
 
-// 沒有 glob 字元的項目照原樣；pattern 的結果依路徑排序，只取檔案，比對不到時是錯誤
+// 目錄下所有的 .kif 檔。只套用 .kifignore，不套用 .gitignore：常有專案把 SUMO 放在 .gitignore 中
+fn kif_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(dir)
+        .standard_filters(false)
+        .hidden(true)
+        .add_custom_ignore_filename(".kifignore")
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .map(|e| e.into_path())
+        .filter(|p| p.extension().is_some_and(|e| e == "kif"))
+        .collect();
+    out.sort();
+    out
+}
+
+// 檔案照原樣；目錄取其下所有 .kif 檔；pattern 只取檔案，比對不到時是錯誤
 fn expand(root: &Path, entries: &[PathBuf]) -> Result<Vec<PathBuf>, ProjectError> {
     let mut out: Vec<PathBuf> = Vec::new();
     for entry in entries {
         let text = entry.to_string_lossy();
         if !is_pattern(&text) {
             let path = root.join(entry);
-            if !out.contains(&path) {
+            if path.is_dir() {
+                out.extend(kif_files(&path));
+            } else {
                 out.push(path);
             }
             continue;
@@ -104,8 +108,12 @@ fn expand(root: &Path, entries: &[PathBuf]) -> Result<Vec<PathBuf>, ProjectError
             pattern: text.to_string(),
             message,
         };
-        let full = format!("{}/{text}", glob::Pattern::escape(&root.to_string_lossy()));
-        let mut matched: Vec<PathBuf> = glob::glob(&full)
+        let full = if entry.is_absolute() {
+            text.to_string()
+        } else {
+            format!("{}/{text}", glob::Pattern::escape(&root.to_string_lossy()))
+        };
+        let matched: Vec<PathBuf> = glob::glob(&full)
             .map_err(|e| bad(e.to_string()))?
             .filter_map(Result::ok)
             .filter(|p| p.is_file())
@@ -115,12 +123,7 @@ fn expand(root: &Path, entries: &[PathBuf]) -> Result<Vec<PathBuf>, ProjectError
                 pattern: text.to_string(),
             });
         }
-        matched.sort();
-        for path in matched {
-            if !out.contains(&path) {
-                out.push(path);
-            }
-        }
+        out.extend(matched);
     }
     Ok(out)
 }
@@ -134,8 +137,7 @@ pub struct ProjectSection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FilesSection {
-    pub library: Vec<PathBuf>,
-    pub editable: Vec<PathBuf>,
+    pub readonly: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -219,8 +221,7 @@ mod tests {
 name = "stretch4-lab"
 
 [files]
-library  = ["sumo/Merge.kif", "sumo/Mid-level-ontology.kif", "ieee1872_terms.kif"]
-editable = ["stretch4_lab.kif"]
+readonly = ["sumo", "ieee1872_terms.kif"]
 
 [format]
 indent = 2
@@ -250,8 +251,7 @@ mathlib = false
     fn parses_the_example_in_the_design_document() {
         let config = Config::parse(EXAMPLE).unwrap();
         assert_eq!(config.project.name, "stretch4-lab");
-        assert_eq!(config.files.library.len(), 3);
-        assert_eq!(config.files.editable, [PathBuf::from("stretch4_lab.kif")]);
+        assert_eq!(config.files.readonly, [PathBuf::from("sumo"), PathBuf::from("ieee1872_terms.kif")]);
         assert_eq!(config.checks["W002"], Severity::Off);
         assert_eq!(config.vampire.translation, Translation::Tff);
         assert_eq!(config.tests.paths, ["tests/*.tq"]);
@@ -260,7 +260,7 @@ mathlib = false
     #[test]
     fn missing_sections_use_defaults() {
         let config = Config::parse("[project]\nname = \"x\"\n").unwrap();
-        assert!(config.files.editable.is_empty());
+        assert!(config.files.readonly.is_empty());
         assert_eq!(config.format, FormatSection::default());
         assert_eq!(config.format.options(), FormatOptions::default());
         assert_eq!(config.vampire.time_limit, 30);
@@ -274,15 +274,6 @@ mathlib = false
 
     #[test]
     fn project_name_is_required() {
-        assert!(Config::parse("[files]\neditable = [\"a.kif\"]\n").is_err());
-    }
-
-    #[test]
-    fn paths_are_relative_to_the_project_directory() {
-        let config = Config::parse("[project]\nname = \"x\"\n[files]\neditable = [\"kb/a.kif\"]\n").unwrap();
-        assert_eq!(
-            config.editable_paths(Path::new("/lab")).unwrap(),
-            [PathBuf::from("/lab/kb/a.kif")]
-        );
+        assert!(Config::parse("[files]\nreadonly = [\"a.kif\"]\n").is_err());
     }
 }

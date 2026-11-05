@@ -12,4 +12,4 @@ pub use intern::{Interner, Symbol};
 pub use kifedit_db::{Db, File, ProjectInput};
 pub use lower::lower_file;
 pub use queries::{SemaDb, file_index, project_index};
-pub use search::{NameMatch, TextMatch, search_names, search_text};
+pub use search::{NameMatch, search_names};

@@ -77,7 +77,7 @@ fn fmt_without_files_formats_only_editable_files_with_project_options() {
     fs::write(dir.path().join("lab.kif"), "(subclass Alpha Beta)\n").unwrap();
     fs::write(
         dir.path().join("project.toml"),
-        "[project]\nname = \"test\"\n\n[files]\nlibrary = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n\n[format]\nline_width = 12\n",
+        "[project]\nname = \"test\"\n\n[files]\nreadonly = [\"lib.kif\"]\n\n[format]\nline_width = 12\n",
     )
     .unwrap();
 

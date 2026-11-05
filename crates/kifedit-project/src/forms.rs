@@ -46,7 +46,7 @@ pub enum FormError {
     #[error("There is no formula with this ID.")]
     UnknownFormula,
 
-    #[error("You cannot edit a library file: {}", path.display())]
+    #[error("You cannot edit a read-only file: {}", path.display())]
     LibraryFile { path: PathBuf },
 
     #[error("The formula does not have argument number {}.", .0 + 1)]

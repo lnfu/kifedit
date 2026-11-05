@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use kifedit_check::{Diagnostic, Severity, check_file};
@@ -13,7 +12,7 @@ use salsa::Setter;
 
 use crate::db::RootDatabase;
 use crate::locate::{LocatedDiagnostic, locate};
-use crate::{Config, CreateFileError, EditFileError, ProjectError, QueryError};
+use crate::{Config, EditFileError, ProjectError, QueryError};
 
 // 查詢文字不屬於任何專案檔案
 const QUERY_FILE: FileId = FileId(u32::MAX);
@@ -35,7 +34,6 @@ pub struct SourceFile {
 #[derive(Debug)]
 pub struct Project {
     root: PathBuf,
-    config_path: PathBuf,
     config: Config,
     pub(crate) db: RootDatabase,
     pub(crate) files: Vec<SourceFile>,
@@ -48,15 +46,7 @@ impl Project {
         let config = Config::load(config_path)?;
         let root = config_path.parent().unwrap_or(Path::new(".")).to_owned();
 
-        // 同一個檔案同時在 library 與 editable 中時，editable 優先
-        let editable = config.editable_paths(&root)?;
-        let mut entries: Vec<(FileRole, PathBuf)> = config
-            .library_paths(&root)?
-            .into_iter()
-            .filter(|p| !editable.contains(p))
-            .map(|p| (FileRole::Library, p))
-            .collect();
-        entries.extend(editable.into_iter().map(|p| (FileRole::Editable, p)));
+        let entries = config.files(&root)?;
 
         let texts: Vec<String> = entries
             .par_iter()
@@ -91,7 +81,6 @@ impl Project {
         let versions = vec![0; files.len()];
         Ok(Self {
             root,
-            config_path: config_path.to_owned(),
             config,
             db,
             files,
@@ -181,71 +170,6 @@ impl Project {
         });
     }
 
-    /// 在專案目錄下建立空白的 editable 檔，並加進 project.toml 的 [files] editable。
-    /// project.toml 只改這一個陣列，註解與排版不變（同 cargo add）
-    pub fn create_file(&mut self, name: &str) -> Result<FileId, CreateFileError> {
-        let name = name.trim().replace('\\', "/");
-        if name.is_empty() {
-            return Err(CreateFileError::EmptyName);
-        }
-        let relative = Path::new(&name);
-        if relative.extension().is_none_or(|e| e != "kif") {
-            return Err(CreateFileError::NotKif);
-        }
-        if !relative.components().all(|c| matches!(c, std::path::Component::Normal(_))) {
-            return Err(CreateFileError::OutsideProject { name });
-        }
-        let path = self.root.join(relative);
-        if path.exists() || self.files.iter().any(|f| f.path == path) {
-            return Err(CreateFileError::Exists { path });
-        }
-
-        // 先準備好 project.toml 的新內容；之後寫入失敗時刪掉剛建立的檔案
-        let config_error = |message: String| CreateFileError::Config {
-            path: self.config_path.clone(),
-            message,
-        };
-        let text = std::fs::read_to_string(&self.config_path).map_err(|e| config_error(e.to_string()))?;
-        let mut document: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| config_error(e.to_string()))?;
-        let files = document["files"].or_insert(toml_edit::table());
-        let editable = files["editable"].or_insert(toml_edit::value(toml_edit::Array::new()));
-        let editable = editable
-            .as_array_mut()
-            .ok_or_else(|| config_error("[files] editable is not an array.".to_string()))?;
-        // 已被 editable 的 pattern 包含時不寫入
-        let included = self.config.editable_includes(relative);
-        if !included {
-            editable.push(name.as_str());
-        }
-
-        let create = |e: io::Error| CreateFileError::Create { path: path.clone(), source: e };
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(create)?;
-        }
-        std::fs::File::create_new(&path).map_err(create)?;
-        if !included && let Err(e) = std::fs::write(&self.config_path, document.to_string()) {
-            let _ = std::fs::remove_file(&path);
-            return Err(config_error(e.to_string()));
-        }
-
-        let id = FileId(self.files.len() as u32);
-        let input = File::new(&self.db, id, String::new());
-        self.files.push(SourceFile {
-            id,
-            path,
-            role: FileRole::Editable,
-            input,
-        });
-        self.versions.push(0);
-        if !included {
-            self.config.files.editable.push(PathBuf::from(&name));
-        }
-        let inputs: Vec<File> = self.files.iter().map(|f| f.input).collect();
-        self.input.set_files(&mut self.db).to(inputs);
-        Ok(id)
-    }
-
-    /// 套用修改，回傳反向修改；索引與分類由 salsa 查詢在下次讀取時更新
     pub fn edit(&mut self, id: FileId, edits: &[TextEdit]) -> Result<Vec<TextEdit>, EditFileError> {
         let file = self.file(id).ok_or(EditFileError::UnknownFile)?;
         if file.role == FileRole::Library {
@@ -278,13 +202,6 @@ impl Project {
             self.interner(),
             limit,
         ))
-    }
-
-    pub fn save(&self, id: FileId) -> io::Result<()> {
-        let file = self.file(id).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "There is no file with this ID.")
-        })?;
-        std::fs::write(&file.path, file.input.text(&self.db))
     }
 }
 

@@ -1,19 +1,12 @@
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
 
-use crate::{FormulaId, Index, Interner, Symbol, Term};
+use crate::{Index, Interner, Symbol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NameMatch {
     pub symbol: Symbol,
     pub score: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TextMatch {
-    pub formula: FormulaId,
-    pub term: Option<Symbol>,
-    pub text: Symbol,
 }
 
 struct Named<'a> {
@@ -57,49 +50,6 @@ pub fn search_names(
             score,
         })
         .collect()
-}
-
-pub fn search_text(
-    index: &Index,
-    interner: &Interner,
-    query: &str,
-    limit: usize,
-) -> Vec<TextMatch> {
-    let query = query.to_lowercase();
-    if query.is_empty() {
-        return Vec::new();
-    }
-    let term_format = interner.get("termFormat");
-    let mut out = Vec::new();
-
-    for formula in index.formulas() {
-        let Term::App(head, args) = &formula.term else {
-            continue;
-        };
-        let Term::Symbol(relation) = head.as_ref() else {
-            continue;
-        };
-        let term_position = if Some(*relation) == term_format { 1 } else { 0 };
-        let term = match args.get(term_position) {
-            Some(Term::Symbol(s)) => Some(*s),
-            _ => None,
-        };
-        for arg in args {
-            if let Term::Str(text) = arg {
-                if interner.resolve(*text).to_lowercase().contains(&query) {
-                    out.push(TextMatch {
-                        formula: formula.id,
-                        term,
-                        text: *text,
-                    });
-                    if out.len() == limit {
-                        return out;
-                    }
-                }
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -149,23 +99,5 @@ mod tests {
         let found = names(&interner, &search_names(&index, &interner, "dpcam", 10));
         assert_eq!(found, ["DepthCamera"]);
         assert_eq!(search_names(&index, &interner, "camera", 2).len(), 2);
-    }
-
-    #[test]
-    fn text_search_ignores_case_and_finds_chinese() {
-        let (interner, index) = build();
-        let term = |q| {
-            search_text(&index, &interner, q, 10)
-                .iter()
-                .map(|m| interner.resolve(m.term.unwrap()).to_string())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(term("pictures"), ["Camera"]);
-        // termFormat 的詞彙是第 2 個參數；todoNote 等其他關係的字串也搜尋
-        assert_eq!(
-            term("相機"),
-            ["DepthCamera", "HeadCameraLeft", "HeadCameraLeft"]
-        );
-        assert!(term("").is_empty());
     }
 }

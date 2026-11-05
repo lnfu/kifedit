@@ -15,7 +15,7 @@ pub fn file_edit(project: &Project, file: FileId) -> Result<Option<TextEdit>, St
 fn editable(project: &Project, file: FileId) -> Result<&kifedit_project::SourceFile, String> {
     let source = project.file(file).ok_or(UNKNOWN)?;
     if source.role != FileRole::Editable {
-        return Err(format!("You cannot format a library file: {}", source.path.display()));
+        return Err(format!("You cannot format a read-only file: {}", source.path.display()));
     }
     if !project.parse(file).is_some_and(|p| p.errors.is_empty()) {
         return Err(format!(

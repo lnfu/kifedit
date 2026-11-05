@@ -11,7 +11,7 @@ pub use config::{
     TestsSection, Translation, VampireSection, find_config,
 };
 pub use checker::{Checker, DEBOUNCE, Update};
-pub use error::{CreateFileError, EditFileError, ProjectError, QueryError};
+pub use error::{EditFileError, ProjectError, QueryError};
 pub use kifedit_check::{Diagnostic, RULES, Rule, Severity};
 pub use locate::{LocatedDiagnostic, Location};
 pub use forms::{FormEdit, FormError, FormValue};

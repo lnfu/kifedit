@@ -5,12 +5,12 @@ use kifedit_project::{FormEdit, FormError, FormValue, Project};
 use kifedit_sema::{FileId, FormulaId};
 
 fn project_with(dir: &Path, library: &str, editable: &str) -> Project {
-    fs::write(dir.join("lib.kif"), library).unwrap();
+    fs::write(dir.join("base.kif"), library).unwrap();
     fs::write(dir.join("lab.kif"), editable).unwrap();
     let config = dir.join("project.toml");
     fs::write(
         &config,
-        "[project]\nname = \"test\"\n\n[files]\nlibrary = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n",
+        "[project]\nname = \"test\"\n\n[files]\nreadonly = [\"base.kif\"]\n",
     )
     .unwrap();
     Project::open(&config).unwrap()

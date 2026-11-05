@@ -14,10 +14,10 @@ pub enum ProjectError {
         source: toml::de::Error,
     },
 
-    #[error("The pattern in [files] is not correct: {pattern}: {message}")]
+    #[error("The pattern in [files] readonly is not correct: {pattern}: {message}")]
     BadPattern { pattern: String, message: String },
 
-    #[error("The pattern in [files] matches no files: {pattern}")]
+    #[error("The pattern in [files] readonly matches no files: {pattern}")]
     NoMatch { pattern: String },
 
     #[error("The project file {} names a check that does not exist in [checks]: {code}", path.display())]
@@ -34,32 +34,11 @@ pub enum QueryError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum CreateFileError {
-    #[error("Write a file name.")]
-    EmptyName,
-
-    #[error("The file name must end with .kif.")]
-    NotKif,
-
-    #[error("The file must be in the project folder: {name}")]
-    OutsideProject { name: String },
-
-    #[error("The file exists: {}", path.display())]
-    Exists { path: PathBuf },
-
-    #[error("Cannot create the file {}: {source}", path.display())]
-    Create { path: PathBuf, source: io::Error },
-
-    #[error("Cannot change the project file {}: {message}", path.display())]
-    Config { path: PathBuf, message: String },
-}
-
-#[derive(Debug, thiserror::Error)]
 pub enum EditFileError {
     #[error("There is no file with this ID.")]
     UnknownFile,
 
-    #[error("You cannot edit a library file: {}", path.display())]
+    #[error("You cannot edit a read-only file: {}", path.display())]
     LibraryFile { path: PathBuf },
 
     #[error(transparent)]

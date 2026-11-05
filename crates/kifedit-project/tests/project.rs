@@ -10,7 +10,7 @@ const LIBRARY: &str = "(subclass Camera Device)\n(subclass Device Entity)\n";
 const EDITABLE: &str = "(instance HeadCamera Camera)\n";
 
 fn write_project(dir: &Path, files: &str) -> PathBuf {
-    fs::write(dir.join("lib.kif"), LIBRARY).unwrap();
+    fs::write(dir.join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.join("lab.kif"), EDITABLE).unwrap();
     let config = dir.join("project.toml");
     fs::write(&config, format!("[project]\nname = \"test\"\n\n[files]\n{files}")).unwrap();
@@ -18,7 +18,7 @@ fn write_project(dir: &Path, files: &str) -> PathBuf {
 }
 
 fn small_project(dir: &Path) -> Project {
-    let config = write_project(dir, "library = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n");
+    let config = write_project(dir, "readonly = [\"base.kif\"]\n");
     Project::open(&config).unwrap()
 }
 
@@ -71,75 +71,79 @@ fn library_files_cannot_be_edited() {
 }
 
 #[test]
-fn save_writes_the_document() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut project = small_project(dir.path());
-    project
-        .edit(FileId(1), &[TextEdit::insert(0.into(), "; new\n")])
-        .unwrap();
-    project.save(FileId(1)).unwrap();
-    let saved = fs::read_to_string(dir.path().join("lab.kif")).unwrap();
-    assert_eq!(saved, format!("; new\n{EDITABLE}"));
-}
-
-#[test]
 fn missing_file_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let config = write_project(dir.path(), "editable = [\"missing.kif\"]\n");
+    let config = write_project(dir.path(), "readonly = [\"missing.kif\"]\n");
     let error = Project::open(&config).unwrap_err();
     assert!(matches!(error, ProjectError::Read { .. }));
     assert!(error.to_string().starts_with("Cannot read the file"), "{error}");
 
 }
 
+fn paths(project: &Project, root: &Path) -> Vec<(String, FileRole)> {
+    project
+        .files()
+        .iter()
+        .map(|f| (f.path.strip_prefix(root).unwrap_or(&f.path).display().to_string(), f.role))
+        .collect()
+}
+
 #[test]
-fn patterns_expand_in_path_order_and_editable_wins() {
+fn all_kif_files_are_in_the_project_and_readonly_patterns_win() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(dir.path().join("kb/sub")).unwrap();
     for name in ["kb/b.kif", "kb/a.kif", "kb/sub/c.kif", "kb/notes.txt"] {
         fs::write(dir.path().join(name), "").unwrap();
     }
-    let config = write_project(
-        dir.path(),
-        "library = [\"kb/**/*.kif\", \"kb/a.kif\"]\neditable = [\"kb/b.kif\", \"lab.kif\"]\n",
-    );
+    let config = write_project(dir.path(), "readonly = [\"kb/**/*.kif\", \"base.kif\"]\n");
     let project = Project::open(&config).unwrap();
-    let files: Vec<(String, FileRole)> = project
-        .files()
-        .iter()
-        .map(|f| (f.path.strip_prefix(dir.path()).unwrap().display().to_string(), f.role))
-        .collect();
     assert_eq!(
-        files,
+        paths(&project, dir.path()),
         [
+            ("base.kif".to_string(), FileRole::Library),
             ("kb/a.kif".to_string(), FileRole::Library),
+            ("kb/b.kif".to_string(), FileRole::Library),
             ("kb/sub/c.kif".to_string(), FileRole::Library),
-            ("kb/b.kif".to_string(), FileRole::Editable),
             ("lab.kif".to_string(), FileRole::Editable),
         ]
     );
 }
 
 #[test]
-fn pattern_without_matches_is_an_error() {
+fn kifignore_removes_files_but_readonly_entries_stay() {
     let dir = tempfile::tempdir().unwrap();
-    let config = write_project(dir.path(), "library = [\"sumo/*.kif\"]\neditable = [\"lab.kif\"]\n");
-    let error = Project::open(&config).unwrap_err();
-    assert!(matches!(&error, ProjectError::NoMatch { pattern } if pattern == "sumo/*.kif"), "{error}");
+    fs::create_dir_all(dir.path().join("drafts")).unwrap();
+    fs::write(dir.path().join("drafts/x.kif"), "").unwrap();
+    fs::write(dir.path().join(".kifignore"), "drafts/\nbase.kif\n").unwrap();
+    let config = write_project(dir.path(), "readonly = [\"base.kif\"]\n");
+    let project = Project::open(&config).unwrap();
+    assert_eq!(
+        paths(&project, dir.path()),
+        [
+            ("base.kif".to_string(), FileRole::Library),
+            ("lab.kif".to_string(), FileRole::Editable),
+        ]
+    );
 }
 
 #[test]
-fn create_file_does_not_change_the_config_when_a_pattern_includes_it() {
+fn readonly_directory_can_be_outside_the_project() {
     let dir = tempfile::tempdir().unwrap();
-    let config = write_project(dir.path(), "library = [\"lib.kif\"]\neditable = [\"*.kif\"]\n");
-    let before = fs::read_to_string(&config).unwrap();
-    let mut project = Project::open(&config).unwrap();
-    project.create_file("new.kif").unwrap();
-    assert_eq!(fs::read_to_string(&config).unwrap(), before);
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("Merge.kif"), LIBRARY).unwrap();
+    let config = write_project(dir.path(), &format!("readonly = [{:?}]\n", outside.path()));
+    let project = Project::open(&config).unwrap();
+    let merge = project.files().iter().find(|f| f.path.ends_with("Merge.kif")).unwrap();
+    assert_eq!(merge.role, FileRole::Library);
+    assert_eq!(project.files().len(), 3);
+}
 
-    // 子目錄不在 *.kif 之內，要寫入
-    project.create_file("kb/other.kif").unwrap();
-    assert!(fs::read_to_string(&config).unwrap().contains("\"*.kif\", \"kb/other.kif\""));
+#[test]
+fn pattern_without_matches_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = write_project(dir.path(), "readonly = [\"sumo/*.kif\"]\n");
+    let error = Project::open(&config).unwrap_err();
+    assert!(matches!(&error, ProjectError::NoMatch { pattern } if pattern == "sumo/*.kif"), "{error}");
 }
 
 #[test]
@@ -156,11 +160,12 @@ fn opens_the_example_project_with_sumo() {
     fs::write(
         &config,
         format!(
-            "[project]\nname = \"mm\"\n\n[files]\nlibrary = [{:?}, {:?}]\neditable = [{:?}]\n",
-            library[0], library[1], lab
+            "[project]\nname = \"mm\"\n\n[files]\nreadonly = [{:?}, {:?}]\n",
+            library[0], library[1]
         ),
     )
     .unwrap();
+    fs::copy(&lab, dir.path().join("mm.kif")).unwrap();
 
     let start = Instant::now();
     let project = Project::open(&config).unwrap();
@@ -186,7 +191,7 @@ fn opens_the_example_project_with_sumo() {
 #[test]
 fn checks_section_changes_or_removes_rules() {
     let dir = tempfile::tempdir().unwrap();
-    let files = "library = [\"lib.kif\"]\neditable = [\"lab.kif\"]\n";
+    let files = "readonly = [\"base.kif\"]\n";
     let codes = |checks: &str| -> Vec<String> {
         let config = write_project(dir.path(), &format!("{files}\n[checks]\n{checks}"));
         let project = Project::open(&config).unwrap();
@@ -204,48 +209,9 @@ fn checks_section_changes_or_removes_rules() {
 #[test]
 fn unknown_check_code_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let config = write_project(dir.path(), "editable = [\"lab.kif\"]\n\n[checks]\nW999 = \"off\"\n");
+    let config = write_project(dir.path(), "\n[checks]\nW999 = \"off\"\n");
     assert!(matches!(
         Project::open(&config),
         Err(ProjectError::UnknownCheck { code, .. }) if code == "W999"
     ));
-}
-
-#[test]
-fn create_file_adds_an_editable_file_and_keeps_the_config_layout() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = write_project(
-        dir.path(),
-        "# library files\nlibrary = [\"lib.kif\"]\neditable = [\"lab.kif\"] # my files\n",
-    );
-    let mut project = Project::open(&config).unwrap();
-    let id = project.create_file("robots/arm.kif").unwrap();
-
-    assert_eq!(project.text(id), Some(""));
-    assert_eq!(project.file(id).unwrap().role, FileRole::Editable);
-    assert!(dir.path().join("robots/arm.kif").is_file());
-    let text = fs::read_to_string(&config).unwrap();
-    assert!(text.contains("# library files\n"));
-    assert!(text.contains("editable = [\"lab.kif\", \"robots/arm.kif\"] # my files"), "{text}");
-
-    // 新檔案可以編輯，重新開啟後仍在專案中
-    project.edit(id, &[TextEdit::insert(0.into(), "(instance Arm Camera)\n")]).unwrap();
-    project.save(id).unwrap();
-    let reopened = Project::open(&config).unwrap();
-    assert_eq!(reopened.files().len(), 3);
-    assert_eq!(reopened.text(FileId(2)), Some("(instance Arm Camera)\n"));
-}
-
-#[test]
-fn create_file_rejects_bad_names() {
-    use kifedit_project::CreateFileError;
-
-    let dir = tempfile::tempdir().unwrap();
-    let mut project = small_project(dir.path());
-    assert!(matches!(project.create_file(" "), Err(CreateFileError::EmptyName)));
-    assert!(matches!(project.create_file("notes.txt"), Err(CreateFileError::NotKif)));
-    assert!(matches!(project.create_file("../out.kif"), Err(CreateFileError::OutsideProject { .. })));
-    assert!(matches!(project.create_file("/tmp/out.kif"), Err(CreateFileError::OutsideProject { .. })));
-    assert!(matches!(project.create_file("lab.kif"), Err(CreateFileError::Exists { .. })));
-    assert_eq!(project.files().len(), 2);
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use kifedit_sema::{FileId, Index, Interner, search_names, search_text};
+use kifedit_sema::{FileId, Index, Interner, search_names};
 use kifedit_syntax::parser::parse;
 
 #[test]
@@ -33,16 +33,6 @@ fn search_speed_on_sumo() {
         eprintln!(
             "Name search {query:?}: {} results in {elapsed:?}. Top: {top:?}",
             found.len()
-        );
-    }
-
-    for query in ["camera", "the class of", "相機"] {
-        let start = Instant::now();
-        let found = search_text(&index, &interner, query, usize::MAX);
-        eprintln!(
-            "Text search {query:?}: {} results in {:?}.",
-            found.len(),
-            start.elapsed()
         );
     }
 

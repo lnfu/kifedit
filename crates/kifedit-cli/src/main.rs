@@ -22,12 +22,12 @@ enum Command {
         #[arg(long)]
         check: bool,
 
-        /// The files to format. If you do not give files, kifedit formats the editable files in project.toml.
+        /// The files to format. If you do not give files, kifedit formats the project files that are not read-only.
         files: Vec<PathBuf>,
     },
     /// Check the project in project.toml for problems.
     Check {
-        /// Also show the problems in library files.
+        /// Also show the problems in read-only files.
         #[arg(long)]
         all: bool,
 
@@ -161,7 +161,13 @@ fn fmt_targets(files: Vec<PathBuf>) -> Result<(Vec<PathBuf>, FormatOptions), Str
     let config = Config::load(&config_path).map_err(|e| e.to_string())?;
     let root = config_path.parent().unwrap_or(Path::new("."));
     let files = if files.is_empty() {
-        config.editable_paths(root).map_err(|e| e.to_string())?
+        config
+            .files(root)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|(role, _)| *role == FileRole::Editable)
+            .map(|(_, path)| path)
+            .collect()
     } else {
         files
     };
