@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
+import { registerTrees } from "./tree";
 
 let client: LanguageClient | undefined;
 
@@ -17,6 +18,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   client = new LanguageClient("kifedit", "kifedit", serverOptions, clientOptions);
   await client.start();
+  registerTrees(context, client);
 }
 
 export function deactivate() {

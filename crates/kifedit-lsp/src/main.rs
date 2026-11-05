@@ -1,6 +1,7 @@
 mod format;
 mod line_index;
 mod term;
+mod tree;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -237,7 +238,25 @@ fn word_at(
     Some((file, name, range))
 }
 
+#[derive(serde::Deserialize)]
+struct TermParams {
+    name: String,
+}
+
 impl Backend {
+    async fn tree_children(&self, params: tree::TreeParams) -> Result<Vec<tree::TreeNode>> {
+        let session = self.session.lock().unwrap();
+        Ok(session.project.as_ref().map(|p| tree::children(p, &params)).unwrap_or_default())
+    }
+
+    /// 詞彙的第一個定義，給樹狀檢視點選時開啟
+    async fn term_location(&self, params: TermParams) -> Result<Option<Location>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let first = term::definitions(project, &params.name).into_iter().take(1).collect();
+        Ok(locations(project, first).into_iter().next())
+    }
+
     fn replace(&self, uri: &Url, text: String) {
         let mut session = self.session.lock().unwrap();
         let Session { project, checker } = &mut *session;
@@ -305,10 +324,13 @@ fn to_lsp(session: &Session, update: Update) -> Option<(Url, Vec<Diagnostic>)> {
 
 #[tokio::main]
 async fn main() {
-    let (service, socket) = LspService::new(|client| Backend {
+    let (service, socket) = LspService::build(|client| Backend {
         client,
         session: Default::default(),
-    });
+    })
+    .custom_method("kifedit/treeChildren", Backend::tree_children)
+    .custom_method("kifedit/termLocation", Backend::term_location)
+    .finish();
     Server::new(tokio::io::stdin(), tokio::io::stdout(), socket)
         .serve(service)
         .await;

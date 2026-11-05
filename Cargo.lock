@@ -2027,8 +2027,10 @@ name = "kifedit-lsp"
 version = "0.1.0"
 dependencies = [
  "kifedit-project",
+ "kifedit-reason",
  "kifedit-sema",
  "kifedit-syntax",
+ "serde",
  "tokio",
  "tower-lsp",
 ]

@@ -16,6 +16,21 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "views": {
+      "explorer": [
+        { "id": "kifedit.classes", "name": "KIF Classes" },
+        { "id": "kifedit.relations", "name": "KIF Relations" },
+        { "id": "kifedit.attributes", "name": "KIF Attributes" }
+      ]
+    },
+    "commands": [
+      { "command": "kifedit.refreshTrees", "title": "Refresh", "icon": "$(refresh)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "kifedit.refreshTrees", "when": "view =~ /^kifedit\\./", "group": "navigation" }
+      ]
+    },
     "configuration": {
       "title": "kifedit",
       "properties": {

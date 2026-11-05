@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 kifedit-project = { version = "0.1.0", path = "../kifedit-project" }
+kifedit-reason = { version = "0.1.0", path = "../kifedit-reason" }
 kifedit-sema = { version = "0.1.0", path = "../kifedit-sema" }
 kifedit-syntax = { version = "0.1.0", path = "../kifedit-syntax" }
+serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.54.1", features = ["full"] }
 tower-lsp = "0.20.0"
