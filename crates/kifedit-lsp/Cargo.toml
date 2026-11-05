@@ -2,6 +2,7 @@
 name = "kifedit-lsp"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 kifedit-project = { version = "0.1.0", path = "../kifedit-project" }

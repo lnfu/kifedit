@@ -2,6 +2,15 @@
 resolver = "2"
 members = ["crates/*"]
 
+[workspace.package]
+license = "MIT"
+
 # 依賴套件在 debug 建置中也最佳化，自己的 crate 仍可除錯
 [profile.dev.package."*"]
 opt-level = 2
+
+# 插件內附的 server 以 release 建置：去掉除錯符號、跨 crate 最佳化，減少檔案大小
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

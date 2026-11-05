@@ -2,6 +2,7 @@
 name = "kifedit-reason"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 kifedit-sema = { version = "0.1.0", path = "../kifedit-sema" }
