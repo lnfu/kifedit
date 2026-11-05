@@ -1,6 +1,8 @@
 use kifedit_project::Project;
-use kifedit_sema::{FileId, Formula, Symbol, Term};
+use kifedit_sema::{FileId, Formula, Symbol, Term, search_names};
 use kifedit_syntax::{SyntaxKind, TextRange, TextSize};
+
+const SYMBOL_LIMIT: usize = 100;
 
 const DECLARATIONS: [&str; 4] = ["instance", "subclass", "subrelation", "subAttribute"];
 
@@ -81,6 +83,43 @@ pub fn definitions(project: &Project, name: &str) -> Vec<(FileId, TextRange)> {
     } else {
         declarations
     }
+}
+
+/// 名稱的模糊搜尋；每個詞彙取第一個定義的位置
+pub fn symbols(project: &Project, query: &str) -> Vec<(String, Vec<&'static str>, FileId, TextRange)> {
+    let interner = project.interner();
+    search_names(project.index(), interner, query, SYMBOL_LIMIT)
+        .into_iter()
+        .filter_map(|m| {
+            let name = interner.resolve(m.symbol);
+            let (file, range) = definitions(project, name)
+                .into_iter()
+                .next()
+                .or_else(|| project.index().mentions(m.symbol).next().map(|f| (f.id.file, f.range)))?;
+            Some((name.to_string(), kind_labels(project, m.symbol), file, range))
+        })
+        .collect()
+}
+
+/// 每個提到此詞彙的 Word token
+pub fn references(project: &Project, name: &str) -> Vec<(FileId, TextRange)> {
+    let Some(term) = project.interner().get(name) else { return Vec::new() };
+    let mut out = Vec::new();
+    for formula in project.index().mentions(term) {
+        let Some(parse) = project.parse(formula.id.file) else { continue };
+        let Some(node) = parse.syntax().covering_element(formula.range).into_node() else {
+            continue;
+        };
+        out.extend(
+            node.descendants_with_tokens()
+                .filter_map(|e| e.into_token())
+                .filter(|t| t.kind() == SyntaxKind::Word && t.text() == name)
+                .map(|t| (formula.id.file, t.text_range())),
+        );
+    }
+    out.sort_by_key(|(file, range)| (file.0, range.start()));
+    out.dedup();
+    out
 }
 
 fn relation_name<'a>(project: &'a Project, formula: &Formula) -> Option<&'a str> {

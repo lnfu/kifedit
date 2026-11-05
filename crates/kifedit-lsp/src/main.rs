@@ -47,6 +47,8 @@ impl LanguageServer for Backend {
                 document_formatting_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -151,22 +153,78 @@ impl LanguageServer for Backend {
         let Some((_, name, _)) = word_at(project, &params.text_document_position_params) else {
             return Ok(None);
         };
-        let mut indexes: HashMap<FileId, LineIndex> = HashMap::new();
-        let locations: Vec<Location> = term::definitions(project, &name)
-            .into_iter()
-            .filter_map(|(file, range)| {
-                let uri = Url::from_file_path(&project.file(file)?.path).ok()?;
-                let index = match indexes.entry(file) {
-                    std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(e) => {
-                        e.insert(LineIndex::new(project.text(file)?))
-                    }
-                };
-                Some(Location::new(uri, index.range(range)))
-            })
-            .collect();
+        let locations = locations(project, term::definitions(project, &name));
         Ok((!locations.is_empty()).then_some(GotoDefinitionResponse::Array(locations)))
     }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some((_, name, _)) = word_at(project, &params.text_document_position) else {
+            return Ok(None);
+        };
+        Ok(Some(locations(project, term::references(project, &name))))
+    }
+
+    #[allow(deprecated)] // SymbolInformation.deprecated 欄位
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        if params.query.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let found = term::symbols(project, &params.query);
+        let places = each_location(project, found.iter().map(|s| (s.2, s.3)).collect());
+        Ok(Some(
+            found
+                .into_iter()
+                .zip(places)
+                .filter_map(|((name, kinds, _, _), location)| {
+                    Some(SymbolInformation {
+                        name,
+                        kind: symbol_kind(&kinds),
+                        tags: None,
+                        deprecated: None,
+                        location: location?,
+                        container_name: (!kinds.is_empty()).then(|| kinds.join(", ")),
+                    })
+                })
+                .collect(),
+        ))
+    }
+}
+
+fn symbol_kind(kinds: &[&str]) -> SymbolKind {
+    match kinds.first().copied() {
+        Some("class") => SymbolKind::CLASS,
+        Some("relation" | "function") => SymbolKind::FUNCTION,
+        Some("attribute") => SymbolKind::ENUM_MEMBER,
+        Some("individual") => SymbolKind::CONSTANT,
+        _ => SymbolKind::VARIABLE,
+    }
+}
+
+fn locations(project: &Project, ranges: Vec<(FileId, TextRange)>) -> Vec<Location> {
+    each_location(project, ranges).into_iter().flatten().collect()
+}
+
+/// 位元組範圍 → LSP Location，與輸入一對一；每個檔案只建一次 LineIndex
+fn each_location(project: &Project, ranges: Vec<(FileId, TextRange)>) -> Vec<Option<Location>> {
+    let mut indexes: HashMap<FileId, Option<(Url, LineIndex)>> = HashMap::new();
+    ranges
+        .into_iter()
+        .map(|(file, range)| {
+            let entry = indexes.entry(file).or_insert_with(|| {
+                let uri = Url::from_file_path(&project.file(file)?.path).ok()?;
+                Some((uri, LineIndex::new(project.text(file)?)))
+            });
+            let (uri, index) = entry.as_ref()?;
+            Some(Location::new(uri.clone(), index.range(range)))
+        })
+        .collect()
 }
 
 fn word_at(
