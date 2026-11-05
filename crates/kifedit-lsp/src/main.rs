@@ -1,3 +1,4 @@
+mod format;
 mod line_index;
 
 use std::sync::{Arc, Mutex};
@@ -32,8 +33,8 @@ impl LanguageServer for Backend {
         if let Some(config) = root.as_deref().and_then(find_config) {
             match tokio::task::spawn_blocking(move || Project::open(&config)).await {
                 Ok(Ok(project)) => self.session.lock().unwrap().project = Some(project),
-                Ok(Err(e)) => self.client.log_message(MessageType::ERROR, e.to_string()).await,
-                Err(e) => self.client.log_message(MessageType::ERROR, e.to_string()).await,
+                Ok(Err(e)) => self.client.show_message(MessageType::ERROR, e.to_string()).await,
+                Err(e) => self.client.show_message(MessageType::ERROR, e.to_string()).await,
             }
         }
         Ok(InitializeResult {
@@ -41,6 +42,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -92,6 +94,32 @@ impl LanguageServer for Backend {
             self.replace(&uri, text);
         }
     }
+
+    async fn formatting(
+        &self,
+        params: DocumentFormattingParams,
+    ) -> Result<Option<Vec<tower_lsp::lsp_types::TextEdit>>> {
+        // 先放開鎖再 await
+        let outcome = {
+            let session = self.session.lock().unwrap();
+            let Some(project) = session.project.as_ref() else { return Ok(None) };
+            let Some(id) = file_id(project, &params.text_document.uri) else { return Ok(None) };
+            format::file_edit(project, id).map(|edit| {
+                let index = LineIndex::new(project.text(id).unwrap_or_default());
+                edit.map(|e| tower_lsp::lsp_types::TextEdit {
+                    range: index.range(e.range),
+                    new_text: e.new_text,
+                })
+            })
+        };
+        match outcome {
+            Ok(edit) => Ok(Some(edit.into_iter().collect())),
+            Err(message) => {
+                self.client.show_message(MessageType::WARNING, message).await;
+                Ok(None)
+            }
+        }
+    }
 }
 
 impl Backend {
@@ -125,9 +153,7 @@ fn to_lsp(session: &Session, update: Update) -> Option<(Url, Vec<Diagnostic>)> {
     }
     let uri = Url::from_file_path(&project.file(update.file)?.path).ok()?;
     let index = LineIndex::new(project.text(update.file)?);
-    let range = |r: TextRange| {
-        Range::new(index.position(r.start().into()), index.position(r.end().into()))
-    };
+    let range = |r: TextRange| index.range(r);
 
     let mut out: Vec<Diagnostic> = project
         .parse(update.file)
