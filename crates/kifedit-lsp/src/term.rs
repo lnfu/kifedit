@@ -27,7 +27,7 @@ pub fn hover(project: &Project, name: &str) -> Option<String> {
             .join(", ")
     };
 
-    let mut out = format!("**{name}**");
+    let mut out = format!("**{name}** · [Open Term Page]({})", open_page_link(name));
     let kinds = kind_labels(project, term);
     if !kinds.is_empty() {
         out += &format!(" ({})", kinds.join(", "));
@@ -60,6 +60,19 @@ pub fn hover(project: &Project, name: &str) -> Option<String> {
         }
     }
     Some(out)
+}
+
+// VS Code 的 command URI：參數是以 URL 編碼的 JSON 陣列
+fn open_page_link(name: &str) -> String {
+    let json = format!("[\"{}\"]", name.replace('\\', "\\\\").replace('"', "\\\""));
+    let encoded: String = json
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    format!("command:kifedit.openTermPage?{encoded}")
 }
 
 /// 宣告此詞彙的公式（instance、subclass 等，詞彙為第 1 個參數）；沒有宣告時回傳 documentation

@@ -4,37 +4,89 @@
   "description": "SUO-KIF language support",
   "version": "0.0.1",
   "private": true,
-  "engines": { "vscode": "^1.90.0" },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "main": "./out/extension.js",
-  "activationEvents": ["workspaceContains:**/project.toml"],
+  "activationEvents": [
+    "workspaceContains:**/project.toml"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "kif",
-        "aliases": ["SUO-KIF", "kif"],
-        "extensions": [".kif"],
+        "aliases": [
+          "SUO-KIF",
+          "kif"
+        ],
+        "extensions": [
+          ".kif"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
     "views": {
       "explorer": [
-        { "id": "kifedit.classes", "name": "KIF Classes" },
-        { "id": "kifedit.relations", "name": "KIF Relations" },
-        { "id": "kifedit.attributes", "name": "KIF Attributes" },
-        { "id": "kifedit.query", "name": "KIF Query" }
+        {
+          "id": "kifedit.classes",
+          "name": "KIF Classes"
+        },
+        {
+          "id": "kifedit.relations",
+          "name": "KIF Relations"
+        },
+        {
+          "id": "kifedit.attributes",
+          "name": "KIF Attributes"
+        },
+        {
+          "id": "kifedit.query",
+          "name": "KIF Query"
+        }
       ]
     },
     "commands": [
-      { "command": "kifedit.refreshTrees", "title": "Refresh", "icon": "$(refresh)" },
-      { "command": "kifedit.runQuery", "title": "kifedit: Run Query", "icon": "$(search)" }
+      {
+        "command": "kifedit.refreshTrees",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kifedit.runQuery",
+        "title": "kifedit: Run Query",
+        "icon": "$(search)"
+      },
+      {
+        "command": "kifedit.openTermPage",
+        "title": "kifedit: Open Term Page"
+      }
     ],
     "keybindings": [
-      { "command": "kifedit.runQuery", "key": "ctrl+alt+q", "when": "editorLangId == kif" }
+      {
+        "command": "kifedit.runQuery",
+        "key": "ctrl+alt+q",
+        "when": "editorLangId == kif"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "kifedit.refreshTrees", "when": "view =~ /^kifedit\\.(classes|relations|attributes)$/", "group": "navigation" },
-        { "command": "kifedit.runQuery", "when": "view == kifedit.query", "group": "navigation" }
+        {
+          "command": "kifedit.refreshTrees",
+          "when": "view =~ /^kifedit\\.(classes|relations|attributes)$/",
+          "group": "navigation"
+        },
+        {
+          "command": "kifedit.runQuery",
+          "when": "view == kifedit.query",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "kifedit.openTermPage",
+          "when": "editorLangId == kif",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
@@ -49,15 +101,19 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p .",
+    "compile": "tsc -p . && vite build --config webview/vite.config.mjs",
     "watch": "tsc -watch -p ."
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "@lucide/svelte": "^1.67.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
-    "typescript": "^5.6.0"
+    "svelte": "^5.57.2",
+    "typescript": "^5.6.0",
+    "vite": "^8.3.5"
   }
 }

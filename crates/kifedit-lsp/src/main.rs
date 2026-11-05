@@ -1,13 +1,15 @@
 mod format;
+mod forms;
 mod line_index;
 mod query;
 mod term;
+mod term_page;
 mod tree;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use kifedit_project::{Checker, Project, Severity, Update, find_config};
+use kifedit_project::{Checker, FileRole, Project, Severity, Update, find_config};
 use kifedit_sema::FileId;
 use kifedit_syntax::{TextEdit, TextRange};
 use line_index::LineIndex;
@@ -240,22 +242,89 @@ fn word_at(
 }
 
 #[derive(serde::Deserialize)]
+struct FormParams {
+    input: forms::FormInput,
+}
+
+#[derive(serde::Serialize)]
+struct EditableFile {
+    id: u32,
+    path: String,
+}
+
+fn failure(message: impl Into<String>) -> tower_lsp::jsonrpc::Error {
+    tower_lsp::jsonrpc::Error {
+        code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+        message: message.into().into(),
+        data: None,
+    }
+}
+
+const NO_PROJECT: &str = "There is no open project.";
+
+#[derive(serde::Deserialize)]
 struct TermParams {
     name: String,
 }
 
 impl Backend {
+    async fn term_page(&self, params: TermParams) -> Result<term_page::TermPage> {
+        let session = self.session.lock().unwrap();
+        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        Ok(term_page::build(project, &params.name))
+    }
+
+    async fn editable_files(&self) -> Result<Vec<EditableFile>> {
+        let session = self.session.lock().unwrap();
+        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        Ok(project
+            .files()
+            .iter()
+            .filter(|f| f.role == FileRole::Editable)
+            .map(|f| EditableFile { id: f.id.0, path: f.path.display().to_string() })
+            .collect())
+    }
+
+    async fn preview_form(&self, params: FormParams) -> Result<forms::Preview> {
+        let session = self.session.lock().unwrap();
+        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        let (file, edit) = params.input.into_edit();
+        let edits = project.preview_form(&edit).map_err(|e| failure(e.to_string()))?;
+        let before = project.text(FileId(file)).ok_or_else(|| failure("There is no file with this ID."))?;
+        let mut after = before.to_string();
+        kifedit_syntax::apply_edits(&mut after, &edits).map_err(|e| failure(e.to_string()))?;
+        Ok(forms::line_diff(before, &after))
+    }
+
+    /// 由 VS Code 套用修改：VS Code 擁有文件內容，套用後以 didChange 通知 server
+    async fn apply_form(&self, params: FormParams) -> Result<()> {
+        let change = {
+            let session = self.session.lock().unwrap();
+            let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+            let (file, edit) = params.input.into_edit();
+            let file = FileId(file);
+            let edits = project.preview_form(&edit).map_err(|e| failure(e.to_string()))?;
+            let source = project.file(file).ok_or_else(|| failure("There is no file with this ID."))?;
+            let uri = Url::from_file_path(&source.path).map_err(|_| failure("The file path is not valid."))?;
+            let index = LineIndex::new(project.text(file).unwrap_or_default());
+            let edits = edits
+                .into_iter()
+                .map(|e| tower_lsp::lsp_types::TextEdit { range: index.range(e.range), new_text: e.new_text })
+                .collect();
+            WorkspaceEdit::new(HashMap::from([(uri, edits)]))
+        };
+        let response = self.client.apply_edit(change).await?;
+        if !response.applied {
+            return Err(failure(
+                response.failure_reason.unwrap_or_else(|| "VS Code did not apply the change.".into()),
+            ));
+        }
+        Ok(())
+    }
+
     async fn tree_children(&self, params: tree::TreeParams) -> Result<Vec<tree::TreeNode>> {
         let session = self.session.lock().unwrap();
         Ok(session.project.as_ref().map(|p| tree::children(p, &params)).unwrap_or_default())
-    }
-
-    /// 詞彙的第一個定義，給樹狀檢視點選時開啟
-    async fn term_location(&self, params: TermParams) -> Result<Option<Location>> {
-        let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
-        let first = term::definitions(project, &params.name).into_iter().take(1).collect();
-        Ok(locations(project, first).into_iter().next())
     }
 
     async fn query(&self, params: query::QueryParams) -> Result<query::QueryOutcome<Location>> {
@@ -362,8 +431,11 @@ async fn main() {
         session: Default::default(),
     })
     .custom_method("kifedit/treeChildren", Backend::tree_children)
-    .custom_method("kifedit/termLocation", Backend::term_location)
     .custom_method("kifedit/query", Backend::query)
+    .custom_method("kifedit/termPage", Backend::term_page)
+    .custom_method("kifedit/editableFiles", Backend::editable_files)
+    .custom_method("kifedit/previewForm", Backend::preview_form)
+    .custom_method("kifedit/applyForm", Backend::apply_form)
     .finish();
     Server::new(tokio::io::stdin(), tokio::io::stdout(), socket)
         .serve(service)

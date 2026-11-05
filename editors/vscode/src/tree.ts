@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { LanguageClient, Location } from "vscode-languageclient/node";
+import { LanguageClient } from "vscode-languageclient/node";
 
 interface TreeNode {
   name: string;
@@ -40,7 +40,7 @@ export class TaxonomyTree implements vscode.TreeDataProvider<TreeNode> {
     if (node.otherParents > 0) {
       item.description = `+${node.otherParents} parents`;
     }
-    item.command = { command: "kifedit.openTerm", title: "Open Term", arguments: [node.name] };
+    item.command = { command: "kifedit.openTermPage", title: "Open Term Page", arguments: [node.name] };
     return item;
   }
 }
@@ -54,14 +54,5 @@ export function registerTrees(context: vscode.ExtensionContext, client: Language
 
   context.subscriptions.push(
     vscode.commands.registerCommand("kifedit.refreshTrees", () => trees.forEach((t) => t.refresh())),
-    vscode.commands.registerCommand("kifedit.openTerm", async (name: string) => {
-      const location = await client.sendRequest<Location | null>("kifedit/termLocation", { name });
-      if (!location) {
-        vscode.window.showInformationMessage(`There is no definition for ${name}.`);
-        return;
-      }
-      const converted = client.protocol2CodeConverter.asLocation(location);
-      await vscode.window.showTextDocument(converted.uri, { selection: converted.range, preview: true });
-    }),
   );
 }

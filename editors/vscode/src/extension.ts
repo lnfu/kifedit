@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
 import { registerQuery } from "./query";
+import { registerTermPage } from "./termPage";
 import { registerTrees } from "./tree";
 
 let client: LanguageClient | undefined;
@@ -15,12 +16,15 @@ export async function activate(context: vscode.ExtensionContext) {
   const serverOptions: ServerOptions = { command };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "kif" }],
+    // hover 裡的 Open Term Page 連結
+    markdown: { isTrusted: { enabledCommands: ["kifedit.openTermPage"] } },
   };
 
   client = new LanguageClient("kifedit", "kifedit", serverOptions, clientOptions);
   await client.start();
   registerTrees(context, client);
   registerQuery(context, client);
+  registerTermPage(context, client);
 }
 
 export function deactivate() {
