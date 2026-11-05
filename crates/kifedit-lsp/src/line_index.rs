@@ -21,6 +21,21 @@ impl<'a> LineIndex<'a> {
         Position::new(line as u32, character as u32)
     }
 
+    /// LSP 位置 → 位元組位置；超出行尾時停在行尾
+    pub fn offset(&self, position: Position) -> usize {
+        let Some(&start) = self.starts.get(position.line as usize) else {
+            return self.text.len();
+        };
+        let mut units = 0;
+        for (i, c) in self.text[start..].char_indices() {
+            if units >= position.character as usize || c == '\n' {
+                return start + i;
+            }
+            units += c.len_utf16();
+        }
+        self.text.len()
+    }
+
     pub fn range(&self, range: TextRange) -> Range {
         Range::new(self.position(range.start().into()), self.position(range.end().into()))
     }

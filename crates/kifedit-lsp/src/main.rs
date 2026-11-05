@@ -1,6 +1,8 @@
 mod format;
 mod line_index;
+mod term;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use kifedit_project::{Checker, Project, Severity, Update, find_config};
@@ -43,6 +45,8 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::FULL,
                 )),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -120,6 +124,59 @@ impl LanguageServer for Backend {
             }
         }
     }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some((file, name, range)) = word_at(project, &params.text_document_position_params)
+        else {
+            return Ok(None);
+        };
+        let index = LineIndex::new(project.text(file).unwrap_or_default());
+        Ok(term::hover(project, &name).map(|value| Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value,
+            }),
+            range: Some(index.range(range)),
+        }))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let session = self.session.lock().unwrap();
+        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some((_, name, _)) = word_at(project, &params.text_document_position_params) else {
+            return Ok(None);
+        };
+        let mut indexes: HashMap<FileId, LineIndex> = HashMap::new();
+        let locations: Vec<Location> = term::definitions(project, &name)
+            .into_iter()
+            .filter_map(|(file, range)| {
+                let uri = Url::from_file_path(&project.file(file)?.path).ok()?;
+                let index = match indexes.entry(file) {
+                    std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(LineIndex::new(project.text(file)?))
+                    }
+                };
+                Some(Location::new(uri, index.range(range)))
+            })
+            .collect();
+        Ok((!locations.is_empty()).then_some(GotoDefinitionResponse::Array(locations)))
+    }
+}
+
+fn word_at(
+    project: &Project,
+    position: &TextDocumentPositionParams,
+) -> Option<(FileId, String, TextRange)> {
+    let file = file_id(project, &position.text_document.uri)?;
+    let offset = LineIndex::new(project.text(file)?).offset(position.position);
+    let (name, range) = term::word_at(project, file, offset)?;
+    Some((file, name, range))
 }
 
 impl Backend {
