@@ -64,7 +64,7 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
+                    TextDocumentSyncKind::INCREMENTAL,
                 )),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -125,11 +125,16 @@ impl LanguageServer for Backend {
         self.replace(&params.text_document.uri, params.text_document.text);
     }
 
-    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
-        if let Some(change) = params.content_changes.pop() {
-            self.replace(&params.text_document.uri, change.text);
-            self.refresh_tokens_later();
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let uri = params.text_document.uri;
+        let Some(mut text) = self.session.lock().unwrap().open.get(&uri).cloned() else {
+            return;
+        };
+        for change in params.content_changes {
+            line_index::apply_change(&mut text, change);
         }
+        self.replace(&uri, text);
+        self.refresh_tokens_later();
     }
 
     // 關閉未儲存的檔案時，內容回到硬碟上的版本
