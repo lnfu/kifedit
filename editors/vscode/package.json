@@ -39,23 +39,32 @@
         "path": "./syntaxes/kif.tmLanguage.json"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kifedit",
+          "title": "kifedit",
+          "icon": "media/kif.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "kifedit": [
         {
           "id": "kifedit.classes",
-          "name": "KIF Classes"
+          "name": "Classes"
         },
         {
           "id": "kifedit.relations",
-          "name": "KIF Relations"
+          "name": "Relations"
         },
         {
           "id": "kifedit.attributes",
-          "name": "KIF Attributes"
+          "name": "Attributes"
         },
         {
           "id": "kifedit.query",
-          "name": "KIF Query"
+          "name": "Query"
         }
       ]
     },
