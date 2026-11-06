@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  SUMO_REPO: https://github.com/ontologyportal/sumo.git
+  SUMO_COMMIT: 848a72208d69a8a488d3e6066dd1a3ab1282f223 # tests compare against this version
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch SUMO
+        run: |
+          git init data/sumo
+          git -C data/sumo fetch --depth 1 "$SUMO_REPO" "$SUMO_COMMIT"
+          git -C data/sumo checkout FETCH_HEAD
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: crate-ci/typos@v1.52.0
+      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: bnjbvr/cargo-machete@main
+
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+      - run: npm run compile

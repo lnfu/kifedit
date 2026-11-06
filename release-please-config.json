@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "9bca77e44b882e2f611937e4aa0165e4cc6721f7",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "kifedit",
+      "changelog-path": "editors/vscode/CHANGELOG.md",
+      "extra-files": [
+        { "type": "json", "path": "editors/vscode/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,81 @@
+name: Release extension
+
+# Packages the extension for each platform, attaches the .vsix files to the GitHub release,
+# and publishes to the Marketplace. release-please.yml calls it after it creates a release;
+# a release published by hand also starts it.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.event.release.tag_name }}
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          # 22.04: older glibc, so the server runs on more Linux distributions
+          - { os: ubuntu-22.04, rust: x86_64-unknown-linux-gnu, vscode: linux-x64 }
+          - { os: ubuntu-22.04-arm, rust: aarch64-unknown-linux-gnu, vscode: linux-arm64 }
+          - { os: macos-latest, rust: aarch64-apple-darwin, vscode: darwin-arm64 }
+          - { os: macos-latest, rust: x86_64-apple-darwin, vscode: darwin-x64 }
+          - { os: windows-latest, rust: x86_64-pc-windows-msvc, vscode: win32-x64, exe: .exe }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+      - run: rustup target add ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust }}
+      - run: cargo build --release --locked -p kifedit-lsp --target ${{ matrix.rust }}
+      - name: Copy the server into the extension
+        shell: bash
+        run: |
+          mkdir -p editors/vscode/server
+          cp target/${{ matrix.rust }}/release/kifedit-lsp${{ matrix.exe }} editors/vscode/server/
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+        working-directory: editors/vscode
+      - name: Set the version from the release tag
+        shell: bash
+        working-directory: editors/vscode
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+      - run: npx vsce package --no-dependencies --target ${{ matrix.vscode }}
+        working-directory: editors/vscode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vscode }}
+          path: editors/vscode/*.vsix
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # Marketplace Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22 # vsce --oidc needs Node.js 22
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: vsix-*
+          merge-multiple: true
+          path: dist
+      - run: gh release upload "$TAG" dist/*.vsix --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npx --yes @vscode/vsce@latest publish --oidc --packagePath dist/*.vsix
