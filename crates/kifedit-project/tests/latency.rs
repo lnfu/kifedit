@@ -28,7 +28,7 @@ fn typing_to_diagnostics_is_within_300_ms() {
         .collect();
     library.sort();
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     fs::write(
         &config,
         format!(

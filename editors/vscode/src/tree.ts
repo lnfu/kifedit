@@ -60,7 +60,7 @@ export function registerTrees(context: vscode.ExtensionContext, client: Language
     clearTimeout(timer);
     timer = setTimeout(refreshAll, 500);
   };
-  const watcher = vscode.workspace.createFileSystemWatcher("**/{*.kif,.kifignore,project.toml}");
+  const watcher = vscode.workspace.createFileSystemWatcher("**/{*.kif,.kifignore,kifedit.toml}");
   watcher.onDidCreate(refreshSoon);
   watcher.onDidDelete(refreshSoon);
   watcher.onDidChange(refreshSoon);

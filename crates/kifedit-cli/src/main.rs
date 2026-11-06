@@ -25,7 +25,7 @@ enum Command {
         /// The files to format. If you do not give files, kifedit formats the project files that are not read-only.
         files: Vec<PathBuf>,
     },
-    /// Check the project in project.toml for problems.
+    /// Check the project in kifedit.toml for problems.
     Check {
         /// Also show the problems in read-only files.
         #[arg(long)]
@@ -82,7 +82,7 @@ fn check(all: bool, format: OutputFormat) -> Result<ExitCode, String> {
     let cwd = std::env::current_dir()
         .map_err(|e| format!("Cannot read the current directory: {e}"))?;
     let config = find_config(&cwd).ok_or(
-        "Cannot find project.toml in this directory or in a parent directory.",
+        "Cannot find kifedit.toml in this directory or in a parent directory.",
     )?;
     let project = Project::open(&config).map_err(|e| e.to_string())?;
     project.check_all();
@@ -145,14 +145,14 @@ fn position(text: &str, offset: usize) -> (usize, usize) {
     (line, column)
 }
 
-// 與 cargo 相同：從目前目錄往上找 project.toml；找到就用它的 [format]
+// 與 cargo 相同：從目前目錄往上找 kifedit.toml；找到就用它的 [format]
 fn fmt_targets(files: Vec<PathBuf>) -> Result<(Vec<PathBuf>, FormatOptions), String> {
     let cwd = std::env::current_dir()
         .map_err(|e| format!("Cannot read the current directory: {e}"))?;
     let Some(config_path) = find_config(&cwd) else {
         if files.is_empty() {
             return Err(
-                "Cannot find project.toml in this directory or in a parent directory. Give the files to format."
+                "Cannot find kifedit.toml in this directory or in a parent directory. Give the files to format."
                     .to_string(),
             );
         }

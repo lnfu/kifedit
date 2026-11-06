@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::{FileRole, ProjectError};
 
-pub const CONFIG_FILE_NAME: &str = "project.toml";
+pub const CONFIG_FILE_NAME: &str = "kifedit.toml";
 
 pub fn find_config(start: &Path) -> Option<PathBuf> {
     start

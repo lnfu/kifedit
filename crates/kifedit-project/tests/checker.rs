@@ -15,7 +15,7 @@ fn setup() -> (tempfile::TempDir, Arc<Mutex<Project>>, Checker, mpsc::Receiver<U
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.path().join("lab.kif"), LAB).unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     fs::write(
         &config,
         "[project]\nname = \"test\"\n\n[files]\nreadonly = [\"base.kif\"]\n\n[checks]\nW002 = \"off\"\nI001 = \"off\"\n",

@@ -6,7 +6,7 @@ use std::process::{Command, Output};
 const UNFORMATTED: &str = "(instance   A    B )\n";
 const FORMATTED: &str = "(instance A B)\n";
 
-// 在 dir 中執行，避免讀到上層目錄的 project.toml
+// 在 dir 中執行，避免讀到上層目錄的 kifedit.toml
 fn kifedit(dir: &Path, args: &[&OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kifedit"))
         .current_dir(dir)
@@ -67,7 +67,7 @@ fn fmt_without_files_and_without_project_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let out = kifedit(dir.path(), &["fmt".as_ref()]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("Cannot find project.toml"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Cannot find kifedit.toml"));
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn fmt_without_files_formats_only_editable_files_with_project_options() {
     fs::write(dir.path().join("lib.kif"), UNFORMATTED).unwrap();
     fs::write(dir.path().join("lab.kif"), "(subclass Alpha Beta)\n").unwrap();
     fs::write(
-        dir.path().join("project.toml"),
+        dir.path().join("kifedit.toml"),
         "[project]\nname = \"test\"\n\n[files]\nreadonly = [\"lib.kif\"]\n\n[format]\nline_width = 12\n",
     )
     .unwrap();

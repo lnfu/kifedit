@@ -2,7 +2,7 @@ use kifedit_sema::FormulaId;
 use kifedit_syntax::TextRange;
 use serde::Deserialize;
 
-/// 嚴重度；`Off` 只用於 `project.toml` 的 `[checks]`，診斷本身不會是 `Off`
+/// 嚴重度；`Off` 只用於 `kifedit.toml` 的 `[checks]`，診斷本身不會是 `Off`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {

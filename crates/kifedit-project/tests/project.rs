@@ -12,7 +12,7 @@ const EDITABLE: &str = "(instance HeadCamera Camera)\n";
 fn write_project(dir: &Path, files: &str) -> PathBuf {
     fs::write(dir.join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.join("lab.kif"), EDITABLE).unwrap();
-    let config = dir.join("project.toml");
+    let config = dir.join("kifedit.toml");
     fs::write(&config, format!("[project]\nname = \"test\"\n\n[files]\n{files}")).unwrap();
     config
 }
@@ -156,7 +156,7 @@ fn opens_the_example_project_with_sumo() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     let library = ["Merge.kif", "Mid-level-ontology.kif"].map(|f| data.join("sumo").join(f));
     fs::write(
         &config,

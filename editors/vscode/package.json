@@ -9,14 +9,14 @@
     "url": "https://github.com/lnfu/kifedit.git",
     "directory": "editors/vscode"
   },
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "engines": {
     "vscode": "^1.90.0"
   },
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:**/project.toml"
+    "workspaceContains:**/kifedit.toml"
   ],
   "contributes": {
     "languages": [

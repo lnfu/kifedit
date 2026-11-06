@@ -16,7 +16,7 @@ fn project(dir: &Path, lab: &str, checks: &str) {
     fs::write(dir.join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.join("lab.kif"), lab).unwrap();
     fs::write(
-        dir.join("project.toml"),
+        dir.join("kifedit.toml"),
         format!("[project]\nname = \"test\"\n\n[files]\nreadonly = [\"base.kif\"]\n\n[checks]\n{checks}"),
     )
     .unwrap();
@@ -83,5 +83,5 @@ fn check_without_project_exits_with_2() {
     let dir = tempfile::tempdir().unwrap();
     let out = kifedit(dir.path(), &["check"]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("Cannot find project.toml"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Cannot find kifedit.toml"));
 }

@@ -23,7 +23,7 @@ fn answers_for(project: &Project, query: &str) -> Vec<String> {
 fn query_text_is_parsed_and_evaluated() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("lab.kif"), "(subclass Camera Device)\n(instance HeadCamera Camera)\n").unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     fs::write(&config, "[project]\nname = \"test\"\n").unwrap();
     let project = Project::open(&config).unwrap();
 
@@ -42,7 +42,7 @@ fn query_speed_on_the_example_project() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     let library = ["Merge.kif", "Mid-level-ontology.kif"].map(|f| data.join("sumo").join(f));
     fs::write(
         &config,

@@ -15,7 +15,7 @@ fn open() -> Option<(tempfile::TempDir, Project)> {
         return None;
     }
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("project.toml");
+    let config = dir.path().join("kifedit.toml");
     fs::write(
         &config,
         "[project]\nname = \"gate\"\n",

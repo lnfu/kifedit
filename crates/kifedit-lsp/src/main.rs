@@ -122,7 +122,7 @@ impl LanguageServer for Backend {
         self.session.lock().unwrap().open.remove(&uri);
     }
 
-    // 插件監看 *.kif、.kifignore 與 project.toml
+    // 插件監看 *.kif、.kifignore 與 kifedit.toml
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         let config_changed = params
             .changes
@@ -453,7 +453,7 @@ impl Backend {
             .collect())
     }
 
-    /// project.toml 改變時重新開啟專案。開啟失敗時保留原本的專案
+    /// kifedit.toml 改變時重新開啟專案。開啟失敗時保留原本的專案
     async fn reopen(&self) -> std::result::Result<Vec<Url>, String> {
         let Some(config) = self.session.lock().unwrap().config.clone() else { return Ok(Vec::new()) };
         let mut project = tokio::task::spawn_blocking(move || Project::open(&config))

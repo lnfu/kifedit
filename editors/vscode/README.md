@@ -9,4 +9,4 @@ SUO-KIF support for VS Code.
 - Term pages and forms to edit facts
 - Queries
 
-The extension starts when the folder has a `project.toml` file.
+The extension starts when the folder has a `kifedit.toml` file.

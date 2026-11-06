@@ -49,7 +49,7 @@ impl<'db> Context<'db> {
     }
 }
 
-/// 嚴重度取規則表的預設值；`project.toml` 的覆寫在讀取時才套用
+/// 嚴重度取規則表的預設值；`kifedit.toml` 的覆寫在讀取時才套用
 fn error(code: &'static str, range: TextRange, message: String) -> Diagnostic {
     Diagnostic {
         code,
