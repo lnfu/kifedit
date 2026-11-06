@@ -14,3 +14,6 @@ salsa = "0.28.5"
 
 [dev-dependencies]
 expect-test = "1.5.1"
+
+[lints]
+workspace = true

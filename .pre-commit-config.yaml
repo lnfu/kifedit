@@ -1,0 +1,40 @@
+# 以 prek 執行：prek install 之後每次 commit 自動檢查；prek run --all-files 檢查全部
+# clippy、test、cargo-deny 較慢，只在 CI 執行
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.kif$ # 測試資料要逐位元組保留
+      - id: end-of-file-fixer
+        exclude: \.kif$
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-machete
+        name: cargo machete
+        entry: cargo machete
+        language: system
+        files: (Cargo\.toml|\.rs)$
+        pass_filenames: false
+      - id: typos
+        name: typos
+        entry: typos
+        language: system
+        types: [text]
+      - id: tsc
+        name: tsc (VS Code extension)
+        entry: bash -c 'cd editors/vscode && npx tsc --noEmit -p .'
+        language: system
+        files: ^editors/vscode/src/.*\.ts$
+        pass_filenames: false

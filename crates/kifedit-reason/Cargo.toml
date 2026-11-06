@@ -11,3 +11,6 @@ salsa = "0.28.5"
 
 [dev-dependencies]
 kifedit-syntax = { path = "../kifedit-syntax" }
+
+[lints]
+workspace = true

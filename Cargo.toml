@@ -5,6 +5,14 @@ members = ["crates/*"]
 [workspace.package]
 license = "MIT"
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+
 # 依賴套件在 debug 建置中也最佳化，自己的 crate 仍可除錯
 [profile.dev.package."*"]
 opt-level = 2
