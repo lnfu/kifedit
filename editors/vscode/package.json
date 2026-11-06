@@ -9,7 +9,7 @@
     "url": "https://github.com/lnfu/kifedit.git",
     "directory": "editors/vscode"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "engines": {
     "vscode": "^1.90.0"
