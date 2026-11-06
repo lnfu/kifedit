@@ -39,10 +39,10 @@ fn lower_list(node: &SyntaxNode, interner: &Interner) -> Term {
         if let Some(op) = LogicOp::from_name(name) {
             return Term::Logic(op, lower_all(args, interner));
         }
-        if let (Some(q), [vars, body]) = (Quantifier::from_name(name), args) {
-            if let Some(vars) = variable_list(vars, interner) {
-                return Term::Quant(q, vars, Box::new(lower_element(body, interner)));
-            }
+        if let (Some(q), [vars, body]) = (Quantifier::from_name(name), args)
+            && let Some(vars) = variable_list(vars, interner)
+        {
+            return Term::Quant(q, vars, Box::new(lower_element(body, interner)));
         }
     }
     // 包含首項是變數的情況，例如 (?REL ?X ?Y)；以及變數列表不合法的量詞，留給檢查器回報

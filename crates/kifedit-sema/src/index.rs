@@ -30,16 +30,16 @@ impl FileIndex {
                 index.mentions.entry(symbol).or_default().push(i);
             }
 
-            if let Term::App(head, args) = &formula.term {
-                if let Term::Symbol(relation) = head.as_ref() {
-                    index.by_relation.entry(*relation).or_default().push(i);
-                    if let Some(Term::Symbol(first)) = args.first() {
-                        index
-                            .by_first_arg
-                            .entry((*relation, *first))
-                            .or_default()
-                            .push(i);
-                    }
+            if let Term::App(head, args) = &formula.term
+                && let Term::Symbol(relation) = head.as_ref()
+            {
+                index.by_relation.entry(*relation).or_default().push(i);
+                if let Some(Term::Symbol(first)) = args.first() {
+                    index
+                        .by_first_arg
+                        .entry((*relation, *first))
+                        .or_default()
+                        .push(i);
                 }
             }
         }

@@ -165,12 +165,11 @@ pub fn build(project: &Project, name: &str) -> TermPage {
         };
         for formula in index.facts(relation, term) {
             shown.insert(formula.id);
-            if let Term::App(_, args) = &formula.term {
-                if let Some(Term::Num(n)) = args.get(1) {
-                    if let Ok(n) = interner.resolve(*n).parse::<usize>() {
-                        page.arity = page.arity.max(Some(n));
-                    }
-                }
+            if let Term::App(_, args) = &formula.term
+                && let Some(Term::Num(n)) = args.get(1)
+                && let Ok(n) = interner.resolve(*n).parse::<usize>()
+            {
+                page.arity = page.arity.max(Some(n));
             }
             page.signature.push(formula_ref(project, formula));
         }

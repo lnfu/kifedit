@@ -54,11 +54,11 @@ pub fn hover(project: &Project, name: &str) -> Option<String> {
         if relation_name(project, formula) != Some("documentation") {
             continue;
         }
-        if let [Term::Symbol(t), _, Term::Str(text)] = args.as_slice() {
-            if *t == term {
-                // SUMO 以 &%Term 標記文件中的詞彙
-                out += &format!("\n\n---\n\n{}", interner.resolve(*text).replace("&%", ""));
-            }
+        if let [Term::Symbol(t), _, Term::Str(text)] = args.as_slice()
+            && *t == term
+        {
+            // SUMO 以 &%Term 標記文件中的詞彙
+            out += &format!("\n\n---\n\n{}", interner.resolve(*text).replace("&%", ""));
         }
     }
     Some(out)

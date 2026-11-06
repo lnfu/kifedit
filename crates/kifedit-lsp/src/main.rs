@@ -519,10 +519,10 @@ impl Backend {
         let Some(id) = file_id(project, uri) else {
             return;
         };
-        if set_text(project, id, text) {
-            if let Some(checker) = checker {
-                checker.edited(id);
-            }
+        if set_text(project, id, text)
+            && let Some(checker) = checker
+        {
+            checker.edited(id);
         }
     }
 
