@@ -1,0 +1,4 @@
+[default.extend-words]
+fof = "fof"     # TPTP first-order form
+strin = "strin" # latency.rs
+widht = "widht" # config.rs
