@@ -8,14 +8,20 @@ const UNKNOWN: &str = "There is no file with this ID.";
 pub fn file_edit(project: &Project, file: FileId) -> Result<Option<TextEdit>, String> {
     editable(project, file)?;
     let before = project.text(file).unwrap_or_default();
-    let after = format_file(&project.parse(file).ok_or(UNKNOWN)?.syntax(), &project.config().format.options());
+    let after = format_file(
+        &project.parse(file).ok_or(UNKNOWN)?.syntax(),
+        &project.config().format.options(),
+    );
     Ok(minimal_edit(before, &after))
 }
 
 fn editable(project: &Project, file: FileId) -> Result<&kifedit_project::SourceFile, String> {
     let source = project.file(file).ok_or(UNKNOWN)?;
     if source.role != FileRole::Editable {
-        return Err(format!("You cannot format a read-only file: {}", source.path.display()));
+        return Err(format!(
+            "You cannot format a read-only file: {}",
+            source.path.display()
+        ));
     }
     if !project.parse(file).is_some_and(|p| p.errors.is_empty()) {
         return Err(format!(
@@ -51,7 +57,10 @@ fn minimal_edit(before: &str, after: &str) -> Option<TextEdit> {
         TextSize::from(prefix as u32),
         TextSize::from((b.len() - suffix) as u32),
     );
-    Some(TextEdit::replace(range, after[prefix..a.len() - suffix].to_string()))
+    Some(TextEdit::replace(
+        range,
+        after[prefix..a.len() - suffix].to_string(),
+    ))
 }
 
 #[cfg(test)]

@@ -48,7 +48,9 @@ pub fn hover(project: &Project, name: &str) -> Option<String> {
         }
     }
     for formula in project.index().mentions(term) {
-        let Term::App(_, args) = &formula.term else { continue };
+        let Term::App(_, args) = &formula.term else {
+            continue;
+        };
         if relation_name(project, formula) != Some("documentation") {
             continue;
         }
@@ -77,10 +79,10 @@ fn open_page_link(name: &str) -> String {
 
 /// 宣告此詞彙的公式（instance、subclass 等，詞彙為第 1 個參數）；沒有宣告時回傳 documentation
 pub fn definitions(project: &Project, name: &str) -> Vec<(FileId, TextRange)> {
-    let Some(term) = project.interner().get(name) else { return Vec::new() };
-    let first_arg_is_term = |formula: &&Formula| {
-        matches!(&formula.term, Term::App(_, args) if matches!(args.first(), Some(Term::Symbol(s)) if *s == term))
+    let Some(term) = project.interner().get(name) else {
+        return Vec::new();
     };
+    let first_arg_is_term = |formula: &&Formula| matches!(&formula.term, Term::App(_, args) if matches!(args.first(), Some(Term::Symbol(s)) if *s == term));
     let with_relation = |relations: &[&str]| -> Vec<(FileId, TextRange)> {
         project
             .index()
@@ -99,27 +101,42 @@ pub fn definitions(project: &Project, name: &str) -> Vec<(FileId, TextRange)> {
 }
 
 /// 名稱的模糊搜尋；每個詞彙取第一個定義的位置
-pub fn symbols(project: &Project, query: &str) -> Vec<(String, Vec<&'static str>, FileId, TextRange)> {
+pub fn symbols(
+    project: &Project,
+    query: &str,
+) -> Vec<(String, Vec<&'static str>, FileId, TextRange)> {
     let interner = project.interner();
     search_names(project.index(), interner, query, SYMBOL_LIMIT)
         .into_iter()
         .filter_map(|m| {
             let name = interner.resolve(m.symbol);
-            let (file, range) = definitions(project, name)
-                .into_iter()
-                .next()
-                .or_else(|| project.index().mentions(m.symbol).next().map(|f| (f.id.file, f.range)))?;
-            Some((name.to_string(), kind_labels(project, m.symbol), file, range))
+            let (file, range) = definitions(project, name).into_iter().next().or_else(|| {
+                project
+                    .index()
+                    .mentions(m.symbol)
+                    .next()
+                    .map(|f| (f.id.file, f.range))
+            })?;
+            Some((
+                name.to_string(),
+                kind_labels(project, m.symbol),
+                file,
+                range,
+            ))
         })
         .collect()
 }
 
 /// 每個提到此詞彙的 Word token
 pub fn references(project: &Project, name: &str) -> Vec<(FileId, TextRange)> {
-    let Some(term) = project.interner().get(name) else { return Vec::new() };
+    let Some(term) = project.interner().get(name) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for formula in project.index().mentions(term) {
-        let Some(parse) = project.parse(formula.id.file) else { continue };
+        let Some(parse) = project.parse(formula.id.file) else {
+            continue;
+        };
         let Some(node) = parse.syntax().covering_element(formula.range).into_node() else {
             continue;
         };

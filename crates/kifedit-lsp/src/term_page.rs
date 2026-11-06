@@ -92,7 +92,10 @@ pub fn build(project: &Project, name: &str) -> TermPage {
     let index = project.index();
     let taxonomy = project.taxonomy();
     let names = |symbols: &[Symbol]| -> Vec<String> {
-        symbols.iter().map(|&s| interner.resolve(s).to_string()).collect()
+        symbols
+            .iter()
+            .map(|&s| interner.resolve(s).to_string())
+            .collect()
     };
     let sorted = |symbols: &[Symbol]| -> Vec<String> {
         let mut out = names(symbols);
@@ -113,7 +116,9 @@ pub fn build(project: &Project, name: &str) -> TermPage {
     // Documentation：documentation 的詞彙是第 1 個參數，termFormat 是第 2 個
     let mut shown = HashSet::new();
     for formula in index.mentions(term) {
-        let Term::App(_, args) = &formula.term else { continue };
+        let Term::App(_, args) = &formula.term else {
+            continue;
+        };
         let entry = match (relation_name(formula), args.as_slice()) {
             (Some("documentation"), [Term::Symbol(t), Term::Symbol(lang), Term::Str(text)])
                 if *t == term =>
@@ -155,7 +160,9 @@ pub fn build(project: &Project, name: &str) -> TermPage {
 
     // Signature
     for relation in SIGNATURE {
-        let Some(relation) = interner.get(relation) else { continue };
+        let Some(relation) = interner.get(relation) else {
+            continue;
+        };
         for formula in index.facts(relation, term) {
             shown.insert(formula.id);
             if let Term::App(_, args) = &formula.term {
@@ -200,11 +207,16 @@ pub fn build(project: &Project, name: &str) -> TermPage {
 fn problems(project: &Project, term: Symbol) -> Vec<Problem> {
     let mut ranges: BTreeMap<FileId, Vec<TextRange>> = BTreeMap::new();
     for formula in project.index().mentions(term) {
-        ranges.entry(formula.id.file).or_default().push(formula.range);
+        ranges
+            .entry(formula.id.file)
+            .or_default()
+            .push(formula.range);
     }
     let mut out = Vec::new();
     for (file, ranges) in ranges {
-        let path = project.file(file).map_or(String::new(), |f| f.path.display().to_string());
+        let path = project
+            .file(file)
+            .map_or(String::new(), |f| f.path.display().to_string());
         for located in project.located_diagnostics(file) {
             let d = &located.diagnostic;
             if !ranges.iter().any(|r| r.contains_range(d.range)) {

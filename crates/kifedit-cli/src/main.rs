@@ -1,11 +1,13 @@
+#![allow(clippy::print_stdout)] // 命令列工具的輸出
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use kifedit_project::{Config, FileRole, Project, Severity, find_config};
-use serde::Serialize;
 use kifedit_syntax::parser::parse;
 use kifedit_syntax::{FormatOptions, format_file};
+use serde::Serialize;
 
 #[derive(Parser)]
 #[command(name = "kifedit", version, about = "SUO-KIF ontology editor")]
@@ -79,11 +81,10 @@ struct JsonDiagnostic<'a> {
 
 // 結束碼同 fmt：0 沒有錯誤，1 有錯誤，2 讀檔或設定失敗
 fn check(all: bool, format: OutputFormat) -> Result<ExitCode, String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Cannot read the current directory: {e}"))?;
-    let config = find_config(&cwd).ok_or(
-        "Cannot find kifedit.toml in this directory or in a parent directory.",
-    )?;
+    let cwd =
+        std::env::current_dir().map_err(|e| format!("Cannot read the current directory: {e}"))?;
+    let config = find_config(&cwd)
+        .ok_or("Cannot find kifedit.toml in this directory or in a parent directory.")?;
     let project = Project::open(&config).map_err(|e| e.to_string())?;
     project.check_all();
 
@@ -105,7 +106,10 @@ fn check(all: bool, format: OutputFormat) -> Result<ExitCode, String> {
             let (line, column) = position(text, d.range.start().into());
             match format {
                 OutputFormat::Text => {
-                    println!("{path}:{line}:{column}: {severity}[{}]: {}", d.code, d.message);
+                    println!(
+                        "{path}:{line}:{column}: {severity}[{}]: {}",
+                        d.code, d.message
+                    );
                 }
                 OutputFormat::Json => {
                     let (end_line, end_column) = position(text, d.range.end().into());
@@ -119,13 +123,20 @@ fn check(all: bool, format: OutputFormat) -> Result<ExitCode, String> {
                         code: d.code,
                         message: &d.message,
                     };
-                    println!("{}", serde_json::to_string(&json).expect("a diagnostic can be written as JSON"));
+                    println!(
+                        "{}",
+                        serde_json::to_string(&json).expect("a diagnostic can be written as JSON")
+                    );
                 }
             }
         }
     }
     eprintln!("Errors: {errors}. Warnings: {warnings}. Information: {infos}.");
-    Ok(if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    Ok(if errors > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn severity_name(severity: Severity) -> &'static str {
@@ -147,8 +158,8 @@ fn position(text: &str, offset: usize) -> (usize, usize) {
 
 // 與 cargo 相同：從目前目錄往上找 kifedit.toml；找到就用它的 [format]
 fn fmt_targets(files: Vec<PathBuf>) -> Result<(Vec<PathBuf>, FormatOptions), String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Cannot read the current directory: {e}"))?;
+    let cwd =
+        std::env::current_dir().map_err(|e| format!("Cannot read the current directory: {e}"))?;
     let Some(config_path) = find_config(&cwd) else {
         if files.is_empty() {
             return Err(

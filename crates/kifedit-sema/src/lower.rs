@@ -31,7 +31,11 @@ fn lower_list(node: &SyntaxNode, interner: &Interner) -> Term {
     };
     let args = &elements[1..];
 
-    if let Some(name) = first.as_token().filter(|t| t.kind() == Word).map(|t| t.text()) {
+    if let Some(name) = first
+        .as_token()
+        .filter(|t| t.kind() == Word)
+        .map(|t| t.text())
+    {
         if let Some(op) = LogicOp::from_name(name) {
             return Term::Logic(op, lower_all(args, interner));
         }
@@ -67,7 +71,10 @@ fn variable_list(element: &SyntaxElement, interner: &Interner) -> Option<Vec<Sym
 }
 
 fn lower_all(elements: &[SyntaxElement], interner: &Interner) -> Vec<Term> {
-    elements.iter().map(|e| lower_element(e, interner)).collect()
+    elements
+        .iter()
+        .map(|e| lower_element(e, interner))
+        .collect()
 }
 
 fn lower_element(element: &SyntaxElement, interner: &Interner) -> Term {
@@ -155,13 +162,16 @@ mod tests {
 
     #[test]
     fn fact() {
-        check("(subclass A B)", expect![[r#"
+        check(
+            "(subclass A B)",
+            expect![[r#"
             #0 0..14
               App
                 Symbol subclass
                 Symbol A
                 Symbol B
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
@@ -218,7 +228,9 @@ mod tests {
 
     #[test]
     fn variable_in_head_position() {
-        check("(=> (?REL ?X ?Y) (?REL ?Y ?X))", expect![[r#"
+        check(
+            "(=> (?REL ?X ?Y) (?REL ?Y ?X))",
+            expect![[r#"
             #0 0..30
               Logic Implies
                 App
@@ -229,12 +241,15 @@ mod tests {
                   Var ?REL
                   Var ?Y
                   Var ?X
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn malformed_quantifier_is_an_application() {
-        check("(forall ?X (p ?X))", expect![[r#"
+        check(
+            "(forall ?X (p ?X))",
+            expect![[r#"
             #0 0..18
               App
                 Symbol forall
@@ -242,12 +257,15 @@ mod tests {
                 App
                   Symbol p
                   Var ?X
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn skips_forms_with_syntax_errors_and_comments() {
-        check("(a b)\n(c (d\n(e ; note\n  f)\n()", expect![[r#"
+        check(
+            "(a b)\n(c (d\n(e ; note\n  f)\n()",
+            expect![[r#"
             #0 0..5
               App
                 Symbol a
@@ -258,12 +276,16 @@ mod tests {
                 Symbol f
             #2 27..29
               Nil
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn hash_ignores_layout_and_comments() {
-        assert_eq!(hash_of("(subclass A B)"), hash_of("(subclass\n  A ; c\n  B)"));
+        assert_eq!(
+            hash_of("(subclass A B)"),
+            hash_of("(subclass\n  A ; c\n  B)")
+        );
     }
 
     #[test]

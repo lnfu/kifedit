@@ -49,15 +49,24 @@ impl Hierarchy {
     }
 
     pub fn parents(&self, symbol: Symbol) -> &[Symbol] {
-        self.parents.get(&symbol).map(Vec::as_slice).unwrap_or_default()
+        self.parents
+            .get(&symbol)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn children(&self, symbol: Symbol) -> &[Symbol] {
-        self.children.get(&symbol).map(Vec::as_slice).unwrap_or_default()
+        self.children
+            .get(&symbol)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn ancestors(&self, symbol: Symbol) -> &[Symbol] {
-        self.ancestors.get(&symbol).map(Vec::as_slice).unwrap_or_default()
+        self.ancestors
+            .get(&symbol)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn descendants(&self, symbol: Symbol) -> Vec<Symbol> {
@@ -228,8 +237,14 @@ mod tests {
     fn parents_children_and_ancestors() {
         let f = Fixture::new(DEVICES);
         let camera = f.sym("Camera");
-        assert_eq!(f.names(f.hierarchy.parents(camera)), ["Device", "ElectricDevice"]);
-        assert_eq!(f.names(f.hierarchy.children(f.sym("ElectricDevice"))), ["Camera", "Lidar"]);
+        assert_eq!(
+            f.names(f.hierarchy.parents(camera)),
+            ["Device", "ElectricDevice"]
+        );
+        assert_eq!(
+            f.names(f.hierarchy.children(f.sym("ElectricDevice"))),
+            ["Camera", "Lidar"]
+        );
         assert_eq!(
             f.names(f.hierarchy.ancestors(camera)),
             ["Device", "ElectricDevice", "Artifact", "Entity"]
@@ -250,10 +265,14 @@ mod tests {
     #[test]
     fn common_ancestors_are_the_nearest_ones() {
         let f = Fixture::new(DEVICES);
-        let common = f.hierarchy.common_ancestors(f.sym("Camera"), f.sym("Lidar"));
+        let common = f
+            .hierarchy
+            .common_ancestors(f.sym("Camera"), f.sym("Lidar"));
         assert_eq!(f.names(&common), ["ElectricDevice"]);
         // 一方是另一方的祖先時，答案就是它本身
-        let common = f.hierarchy.common_ancestors(f.sym("Device"), f.sym("Lidar"));
+        let common = f
+            .hierarchy
+            .common_ancestors(f.sym("Device"), f.sym("Lidar"));
         assert_eq!(f.names(&common), ["Device"]);
     }
 

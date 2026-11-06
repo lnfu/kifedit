@@ -36,7 +36,11 @@ impl From<FormulaInput> for FormulaId {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum FormInput {
     AddFact {
         file: u32,

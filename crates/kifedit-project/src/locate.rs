@@ -38,7 +38,11 @@ impl<'a> Lines<'a> {
         let offset = offset.min(self.text.len());
         let line = self.starts.partition_point(|&s| s <= offset);
         let start = self.starts[line - 1];
-        let column = self.text.get(start..offset).map_or(0, |s| s.chars().count()) + 1;
+        let column = self
+            .text
+            .get(start..offset)
+            .map_or(0, |s| s.chars().count())
+            + 1;
         (line, column)
     }
 }
@@ -55,16 +59,25 @@ pub(crate) fn locate<'a>(
         let formula = index.formula(id)?;
         let other = match others.entry(id.file) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-            std::collections::hash_map::Entry::Vacant(e) => e.insert(Lines::new(file_text(id.file)?)),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(Lines::new(file_text(id.file)?))
+            }
         };
         let (line, _) = other.position(formula.range.start().into());
-        Some(Location { file: id.file, line })
+        Some(Location {
+            file: id.file,
+            line,
+        })
     };
     diagnostics
         .into_iter()
         .map(|diagnostic| {
             let (line, column) = lines.position(diagnostic.range.start().into());
-            let related = diagnostic.related.iter().filter_map(|&id| related_location(id)).collect();
+            let related = diagnostic
+                .related
+                .iter()
+                .filter_map(|&id| related_location(id))
+                .collect();
             LocatedDiagnostic {
                 diagnostic,
                 line,

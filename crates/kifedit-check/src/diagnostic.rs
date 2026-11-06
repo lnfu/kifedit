@@ -31,22 +31,54 @@ pub struct Rule {
 }
 
 pub const RULES: &[Rule] = &[
-    rule("E001", Severity::Error, "Syntax error: a parenthesis or a string is not closed."),
+    rule(
+        "E001",
+        Severity::Error,
+        "Syntax error: a parenthesis or a string is not closed.",
+    ),
     rule("E002", Severity::Error, "The term is not defined."),
-    rule("E003", Severity::Error, "The number of arguments is not correct."),
-    rule("E004", Severity::Error, "The argument is not of the class that the domain gives."),
-    rule("E005", Severity::Error, "The subclass, subrelation, or subAttribute hierarchy has a cycle."),
-    rule("E006", Severity::Error, "An individual is an instance of two disjoint classes."),
+    rule(
+        "E003",
+        Severity::Error,
+        "The number of arguments is not correct.",
+    ),
+    rule(
+        "E004",
+        Severity::Error,
+        "The argument is not of the class that the domain gives.",
+    ),
+    rule(
+        "E005",
+        Severity::Error,
+        "The subclass, subrelation, or subAttribute hierarchy has a cycle.",
+    ),
+    rule(
+        "E006",
+        Severity::Error,
+        "An individual is an instance of two disjoint classes.",
+    ),
     rule("W001", Severity::Warning, "The formula is a duplicate."),
     rule("W002", Severity::Warning, "The term has no documentation."),
-    rule("W003", Severity::Warning, "A variable occurs only one time in a rule."),
-    rule("W004", Severity::Warning, "A variable in the consequent is not in the antecedent."),
+    rule(
+        "W003",
+        Severity::Warning,
+        "A variable occurs only one time in a rule.",
+    ),
+    rule(
+        "W004",
+        Severity::Warning,
+        "A variable in the consequent is not in the antecedent.",
+    ),
     rule("W005", Severity::Warning, "The relation has no domain."),
     rule("I001", Severity::Info, "No other formula uses the term."),
 ];
 
 const fn rule(code: &'static str, severity: Severity, summary: &'static str) -> Rule {
-    Rule { code, severity, summary }
+    Rule {
+        code,
+        severity,
+        summary,
+    }
 }
 
 pub fn find_rule(code: &str) -> Option<&'static Rule> {

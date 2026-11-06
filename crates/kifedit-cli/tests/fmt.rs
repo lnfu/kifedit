@@ -36,7 +36,10 @@ fn check_reports_an_unformatted_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_kif(dir.path(), UNFORMATTED);
 
-    let out = kifedit(dir.path(), &["fmt".as_ref(), "--check".as_ref(), path.as_os_str()]);
+    let out = kifedit(
+        dir.path(),
+        &["fmt".as_ref(), "--check".as_ref(), path.as_os_str()],
+    );
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stdout).contains("The file is not formatted."));
     assert_eq!(fs::read_to_string(&path).unwrap(), UNFORMATTED);
@@ -47,7 +50,10 @@ fn check_passes_a_formatted_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_kif(dir.path(), FORMATTED);
 
-    let out = kifedit(dir.path(), &["fmt".as_ref(), "--check".as_ref(), path.as_os_str()]);
+    let out = kifedit(
+        dir.path(),
+        &["fmt".as_ref(), "--check".as_ref(), path.as_os_str()],
+    );
     assert_eq!(out.status.code(), Some(0));
     assert!(out.stdout.is_empty());
 }
@@ -87,5 +93,8 @@ fn fmt_without_files_formats_only_editable_files_with_project_options() {
         fs::read_to_string(dir.path().join("lab.kif")).unwrap(),
         "(subclass\n  Alpha\n  Beta)\n"
     );
-    assert_eq!(fs::read_to_string(dir.path().join("lib.kif")).unwrap(), UNFORMATTED);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("lib.kif")).unwrap(),
+        UNFORMATTED
+    );
 }

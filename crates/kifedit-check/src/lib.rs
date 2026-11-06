@@ -7,6 +7,6 @@ mod rules;
 pub use diagnostic::{Diagnostic, RULES, Rule, Severity, find_rule};
 pub use queries::{
     Constraint, Signature, TermKey, TermTypes, check_file, class_ancestors, declared,
-    declared_terms, disjoint_pairs, file_declarations, has_documentation, hierarchy_cycles, referenced, signature,
-    term_types,
+    declared_terms, disjoint_pairs, file_declarations, has_documentation, hierarchy_cycles,
+    referenced, signature, term_types,
 };

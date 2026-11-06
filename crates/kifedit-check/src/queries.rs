@@ -21,13 +21,18 @@ pub struct TermKey<'db> {
 /// 投影：檔案中被宣告的詞彙，排序且不含位置
 #[salsa::tracked(returns(ref))]
 pub fn file_declarations(db: &dyn SemaDb, file: File) -> Vec<Symbol> {
-    let declaring: Vec<Symbol> = DECLARING.iter().filter_map(|r| db.interner().get(r)).collect();
+    let declaring: Vec<Symbol> = DECLARING
+        .iter()
+        .filter_map(|r| db.interner().get(r))
+        .collect();
     let mut out: Vec<Symbol> = file_index(db, file)
         .formulas()
         .iter()
         .filter_map(|f| match &f.term {
             Term::App(head, args) => match (head.as_ref(), args.first()) {
-                (Term::Symbol(r), Some(Term::Symbol(first))) if declaring.contains(r) => Some(*first),
+                (Term::Symbol(r), Some(Term::Symbol(first))) if declaring.contains(r) => {
+                    Some(*first)
+                }
                 _ => None,
             },
             _ => None,
@@ -52,7 +57,9 @@ pub fn declared_terms(db: &dyn SemaDb, project: ProjectInput) -> FxHashSet<Symbo
 pub fn declared<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: TermKey<'db>) -> bool {
     let symbol = term.symbol(db);
     declared_terms(db, project).contains(&symbol)
-        || ALWAYS_DEFINED.iter().any(|t| db.interner().get(t) == Some(symbol))
+        || ALWAYS_DEFINED
+            .iter()
+            .any(|t| db.interner().get(t) == Some(symbol))
 }
 
 /// 關係的參數簽名（§7.1 E003、E004）；每項記下來源公式，診斷可以連回去
@@ -72,14 +79,22 @@ pub struct Constraint {
 }
 
 #[salsa::tracked(returns(ref))]
-pub fn signature<'db>(db: &'db dyn SemaDb, project: ProjectInput, relation: TermKey<'db>) -> Signature {
+pub fn signature<'db>(
+    db: &'db dyn SemaDb,
+    project: ProjectInput,
+    relation: TermKey<'db>,
+) -> Signature {
     let interner = db.interner();
     let index = project_index(db, project);
     let relation = relation.symbol(db);
     let collect = |name: &str, subclass: bool, out: &mut Vec<Constraint>| {
-        let Some(rel) = interner.get(name) else { return };
+        let Some(rel) = interner.get(name) else {
+            return;
+        };
         for f in index.facts(rel, relation) {
-            let Term::App(_, args) = &f.term else { continue };
+            let Term::App(_, args) = &f.term else {
+                continue;
+            };
             let (position, class) = match args.as_slice() {
                 [_, Term::Num(n), Term::Symbol(class)] => match interner.resolve(*n).parse() {
                     Ok(n) => (n, *class),
@@ -88,7 +103,12 @@ pub fn signature<'db>(db: &'db dyn SemaDb, project: ProjectInput, relation: Term
                 [_, Term::Symbol(class)] => (0, *class),
                 _ => continue,
             };
-            out.push(Constraint { position, class, subclass, formula: f.id });
+            out.push(Constraint {
+                position,
+                class,
+                subclass,
+                formula: f.id,
+            });
         }
     };
     let mut domains = Vec::new();
@@ -114,7 +134,11 @@ pub struct TermTypes {
 }
 
 #[salsa::tracked(returns(ref))]
-pub fn term_types<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: TermKey<'db>) -> TermTypes {
+pub fn term_types<'db>(
+    db: &'db dyn SemaDb,
+    project: ProjectInput,
+    term: TermKey<'db>,
+) -> TermTypes {
     let taxonomy = project_taxonomy(db, project);
     let symbol = term.symbol(db);
     let mut all = taxonomy.types_of(symbol);
@@ -127,9 +151,16 @@ pub fn term_types<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: TermKey
 
 /// 類別本身加上所有 subclass 祖先（排序）
 #[salsa::tracked(returns(ref))]
-pub fn class_ancestors<'db>(db: &'db dyn SemaDb, project: ProjectInput, class: TermKey<'db>) -> Vec<Symbol> {
+pub fn class_ancestors<'db>(
+    db: &'db dyn SemaDb,
+    project: ProjectInput,
+    class: TermKey<'db>,
+) -> Vec<Symbol> {
     let symbol = class.symbol(db);
-    let mut out = project_taxonomy(db, project).subclass.ancestors(symbol).to_vec();
+    let mut out = project_taxonomy(db, project)
+        .subclass
+        .ancestors(symbol)
+        .to_vec();
     out.push(symbol);
     out.sort_unstable();
     out
@@ -137,7 +168,10 @@ pub fn class_ancestors<'db>(db: &'db dyn SemaDb, project: ProjectInput, class: T
 
 /// 三種階層中的循環（§7.1 E005）
 #[salsa::tracked(returns(ref))]
-pub fn hierarchy_cycles(db: &dyn SemaDb, project: ProjectInput) -> Vec<(&'static str, Vec<Symbol>)> {
+pub fn hierarchy_cycles(
+    db: &dyn SemaDb,
+    project: ProjectInput,
+) -> Vec<(&'static str, Vec<Symbol>)> {
     let taxonomy = project_taxonomy(db, project);
     [
         ("subclass", &taxonomy.subclass),
@@ -157,8 +191,12 @@ pub fn file_disjoint_pairs(db: &dyn SemaDb, file: File) -> Vec<(Symbol, Symbol, 
         ["disjoint", "partition", "disjointDecomposition"].map(|r| interner.get(r));
     let mut out = Vec::new();
     for f in file_index(db, file).formulas() {
-        let Term::App(head, args) = &f.term else { continue };
-        let Term::Symbol(relation) = head.as_ref() else { continue };
+        let Term::App(head, args) = &f.term else {
+            continue;
+        };
+        let Term::Symbol(relation) = head.as_ref() else {
+            continue;
+        };
         let classes: &[Term] = match Some(*relation) {
             r if r == disjoint => args,
             r if r == partition || r == decomposition => args.get(1..).unwrap_or_default(),
@@ -183,7 +221,10 @@ pub fn file_disjoint_pairs(db: &dyn SemaDb, file: File) -> Vec<(Symbol, Symbol, 
 }
 
 #[salsa::tracked(returns(ref))]
-pub fn disjoint_pairs(db: &dyn SemaDb, project: ProjectInput) -> FxHashMap<(Symbol, Symbol), FormulaId> {
+pub fn disjoint_pairs(
+    db: &dyn SemaDb,
+    project: ProjectInput,
+) -> FxHashMap<(Symbol, Symbol), FormulaId> {
     let mut out = FxHashMap::default();
     for &file in project.files(db) {
         for &(a, b, formula) in file_disjoint_pairs(db, file) {
@@ -195,9 +236,18 @@ pub fn disjoint_pairs(db: &dyn SemaDb, project: ProjectInput) -> FxHashMap<(Symb
 
 /// 詞彙是否有 documentation（§7.1 W002）
 #[salsa::tracked(returns(copy))]
-pub fn has_documentation<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: TermKey<'db>) -> bool {
-    let Some(documentation) = db.interner().get("documentation") else { return false };
-    project_index(db, project).facts(documentation, term.symbol(db)).next().is_some()
+pub fn has_documentation<'db>(
+    db: &'db dyn SemaDb,
+    project: ProjectInput,
+    term: TermKey<'db>,
+) -> bool {
+    let Some(documentation) = db.interner().get("documentation") else {
+        return false;
+    };
+    project_index(db, project)
+        .facts(documentation, term.symbol(db))
+        .next()
+        .is_some()
 }
 
 /// 詞彙是否被「不是描述它本身」的公式提及（§7.1 I001）。
@@ -206,16 +256,18 @@ pub fn has_documentation<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: 
 pub fn referenced<'db>(db: &'db dyn SemaDb, project: ProjectInput, term: TermKey<'db>) -> bool {
     let interner = db.interner();
     let symbol = term.symbol(db);
-    project_index(db, project).mentions(symbol).any(|f| match &f.term {
-        Term::App(head, args) => {
-            let position = match head.as_ref() {
-                Term::Symbol(r) if interner.resolve(*r) == "termFormat" => 1,
-                _ => 0,
-            };
-            !matches!(args.get(position), Some(Term::Symbol(s)) if *s == symbol)
-        }
-        _ => true,
-    })
+    project_index(db, project)
+        .mentions(symbol)
+        .any(|f| match &f.term {
+            Term::App(head, args) => {
+                let position = match head.as_ref() {
+                    Term::Symbol(r) if interner.resolve(*r) == "termFormat" => 1,
+                    _ => 0,
+                };
+                !matches!(args.get(position), Some(Term::Symbol(s)) if *s == symbol)
+            }
+            _ => true,
+        })
 }
 
 /// 一個檔案的所有診斷，依位置排序；只依賴本檔的公式與它用到的詞彙的查詢
@@ -277,7 +329,10 @@ mod tests {
         /// 上次呼叫之後重新執行的 check_file，以檔案的 salsa ID 表示
         fn checked_files(&self) -> Vec<String> {
             let executed = std::mem::take(&mut *self.executed.lock().unwrap());
-            executed.into_iter().filter(|k| k.starts_with("check_file")).collect()
+            executed
+                .into_iter()
+                .filter(|k| k.starts_with("check_file"))
+                .collect()
         }
     }
 
@@ -340,7 +395,10 @@ mod tests {
     #[test]
     fn edit_of_a_note_checks_only_the_edited_file() {
         let mut fixture = Fixture::new();
-        fixture.set(2, &LAB.replace("Check the lens.", "Check the lens and the cable."));
+        fixture.set(
+            2,
+            &LAB.replace("Check the lens.", "Check the lens and the cable."),
+        );
         fixture.check_all();
         assert_eq!(fixture.db.checked_files().len(), 1);
     }

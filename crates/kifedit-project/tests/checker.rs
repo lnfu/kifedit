@@ -11,7 +11,12 @@ const LIBRARY: &str = "(instance instance BinaryPredicate)\n(instance BinaryPred
 const LAB: &str = "(instance Arm Entity)\n";
 const LAB_ID: FileId = FileId(1);
 
-fn setup() -> (tempfile::TempDir, Arc<Mutex<Project>>, Checker, mpsc::Receiver<Update>) {
+fn setup() -> (
+    tempfile::TempDir,
+    Arc<Mutex<Project>>,
+    Checker,
+    mpsc::Receiver<Update>,
+) {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.path().join("lab.kif"), LAB).unwrap();
@@ -34,7 +39,9 @@ fn setup() -> (tempfile::TempDir, Arc<Mutex<Project>>, Checker, mpsc::Receiver<U
 }
 
 fn next(receiver: &mpsc::Receiver<Update>) -> Update {
-    receiver.recv_timeout(Duration::from_secs(10)).expect("The checker sent no update.")
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("The checker sent no update.")
 }
 
 #[test]
@@ -59,14 +66,21 @@ fn edit_sends_the_edited_file_with_the_new_version() {
         let mut project = project.lock().unwrap();
         let end = LAB.len() as u32;
         project
-            .edit(LAB_ID, &[TextEdit::insert(end.into(), "(instance Hand Limb)\n")])
+            .edit(
+                LAB_ID,
+                &[TextEdit::insert(end.into(), "(instance Hand Limb)\n")],
+            )
             .unwrap();
         project.version(LAB_ID)
     };
     checker.edited(LAB_ID);
     let update = next(&receiver);
     assert_eq!((update.file, update.version), (LAB_ID, version));
-    let codes: Vec<&str> = update.diagnostics.iter().map(|d| d.diagnostic.code).collect();
+    let codes: Vec<&str> = update
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.code)
+        .collect();
     assert_eq!(codes, ["E002"]);
 
     // 函式庫檔的結果沒有變，不再送出
@@ -78,7 +92,10 @@ fn edit_sends_the_edited_file_with_the_new_version() {
         let start = LAB.len() as u32;
         let end = start + "(instance Hand Limb)\n".len() as u32;
         project
-            .edit(LAB_ID, &[TextEdit::delete(TextRange::new(start.into(), end.into()))])
+            .edit(
+                LAB_ID,
+                &[TextEdit::delete(TextRange::new(start.into(), end.into()))],
+            )
             .unwrap();
     }
     checker.edited(LAB_ID);

@@ -86,11 +86,14 @@ fn reindents_rule_with_line_start_lists() {
 
 #[test]
 fn always_breaks_short_rule() {
-    check("(=> (networkUplink ?A ?B) (connected ?A ?B))\n", expect![[r#"
+    check(
+        "(=> (networkUplink ?A ?B) (connected ?A ?B))\n",
+        expect![[r#"
         (=>
           (networkUplink ?A ?B)
           (connected ?A ?B))
-    "#]]);
+    "#]],
+    );
 }
 
 #[test]
@@ -142,17 +145,23 @@ fn multi_line_string_is_unchanged() {
 
 #[test]
 fn error_form_is_verbatim() {
-    check("(a (b\n(instance   A    B )\n", expect![[r#"
+    check(
+        "(a (b\n(instance   A    B )\n",
+        expect![[r#"
         (a (b
         (instance A B)
-    "#]]);
+    "#]],
+    );
 }
 
 #[test]
 fn normalizes_spaces_and_file_edges() {
-    check("\n\n  (instance   A    B )\n\n\n", expect![[r#"
+    check(
+        "\n\n  (instance   A    B )\n\n\n",
+        expect![[r#"
         (instance A B)
-    "#]]);
+    "#]],
+    );
 }
 
 #[test]

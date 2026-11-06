@@ -17,7 +17,11 @@ fn typing_to_diagnostics_is_within_300_ms() {
     let lab = data.join("fixtures/mm.kif");
     let sumo = data.join("sumo");
     if !lab.is_file() || !sumo.is_dir() {
-        eprintln!("Skip the test. Cannot find {} or {}.", lab.display(), sumo.display());
+        eprintln!(
+            "Skip the test. Cannot find {} or {}.",
+            lab.display(),
+            sumo.display()
+        );
         return;
     }
     let mut library: Vec<String> = fs::read_dir(&sumo)
@@ -67,14 +71,30 @@ fn typing_to_diagnostics_is_within_300_ms() {
     let text = project.lock().unwrap().text(lab_id).unwrap().to_string();
     let note = text.find("型號尚未確認").unwrap() as u32;
     let relation = text.find("(rosTopic").unwrap() as u32 + 1;
-    let domain = text.find("(domain rosTopic 2 SymbolicString)").unwrap() as u32 + "(domain rosTopic 2 ".len() as u32;
+    let domain = text.find("(domain rosTopic 2 SymbolicString)").unwrap() as u32
+        + "(domain rosTopic 2 ".len() as u32;
     let edits = [
         vec![TextEdit::insert(note.into(), "x")],
-        vec![TextEdit::delete(TextRange::new(note.into(), (note + 1).into()))],
-        vec![TextEdit::replace(TextRange::new(relation.into(), (relation + 8).into()), "rosTopiX")],
-        vec![TextEdit::replace(TextRange::new(relation.into(), (relation + 8).into()), "rosTopic")],
-        vec![TextEdit::replace(TextRange::new(domain.into(), (domain + 14).into()), "SymbolicStrinX")],
-        vec![TextEdit::replace(TextRange::new(domain.into(), (domain + 14).into()), "SymbolicString")],
+        vec![TextEdit::delete(TextRange::new(
+            note.into(),
+            (note + 1).into(),
+        ))],
+        vec![TextEdit::replace(
+            TextRange::new(relation.into(), (relation + 8).into()),
+            "rosTopiX",
+        )],
+        vec![TextEdit::replace(
+            TextRange::new(relation.into(), (relation + 8).into()),
+            "rosTopic",
+        )],
+        vec![TextEdit::replace(
+            TextRange::new(domain.into(), (domain + 14).into()),
+            "SymbolicStrinX",
+        )],
+        vec![TextEdit::replace(
+            TextRange::new(domain.into(), (domain + 14).into()),
+            "SymbolicString",
+        )],
     ];
 
     let mut times = Vec::new();

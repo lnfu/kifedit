@@ -50,11 +50,17 @@ pub fn tokens(project: &Project, file: FileId) -> Vec<SemanticToken> {
 
     let mut out = Vec::new();
     let (mut line, mut start) = (0, 0);
-    for token in parse.syntax().descendants_with_tokens().filter_map(|e| e.into_token()) {
+    for token in parse
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+    {
         if token.kind() != SyntaxKind::Word {
             continue;
         }
-        let Some(symbol) = interner.get(token.text()) else { continue };
+        let Some(symbol) = interner.get(token.text()) else {
+            continue;
+        };
         let Some(token_type) = *types
             .entry(symbol)
             .or_insert_with(|| token_type(taxonomy.kinds(symbol)))
@@ -65,7 +71,11 @@ pub fn tokens(project: &Project, file: FileId) -> Vec<SemanticToken> {
         let delta_line = position.line - line;
         out.push(SemanticToken {
             delta_line,
-            delta_start: if delta_line == 0 { position.character - start } else { position.character },
+            delta_start: if delta_line == 0 {
+                position.character - start
+            } else {
+                position.character
+            },
             length: token.text().encode_utf16().count() as u32,
             token_type,
             token_modifiers_bitset: 0,

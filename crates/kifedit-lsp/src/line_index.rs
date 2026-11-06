@@ -37,6 +37,9 @@ impl<'a> LineIndex<'a> {
     }
 
     pub fn range(&self, range: TextRange) -> Range {
-        Range::new(self.position(range.start().into()), self.position(range.end().into()))
+        Range::new(
+            self.position(range.start().into()),
+            self.position(range.end().into()),
+        )
     }
 }

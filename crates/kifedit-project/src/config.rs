@@ -49,7 +49,11 @@ impl Config {
             source,
         })?;
         // 與 deny_unknown_fields 相同：不認得的規則代碼是設定錯誤
-        if let Some(code) = config.checks.keys().find(|c| kifedit_check::find_rule(c).is_none()) {
+        if let Some(code) = config
+            .checks
+            .keys()
+            .find(|c| kifedit_check::find_rule(c).is_none())
+        {
             return Err(ProjectError::UnknownCheck {
                 path: path.to_owned(),
                 code: code.clone(),
@@ -61,8 +65,10 @@ impl Config {
     /// 專案的所有檔案，依路徑排序：專案目錄下的 .kif 檔（套用 .kifignore），
     /// 加上 readonly 列出的檔案。readonly 可以在專案目錄外，明確列出時不受 .kifignore 影響
     pub fn files(&self, root: &Path) -> Result<Vec<(FileRole, PathBuf)>, ProjectError> {
-        let mut files: BTreeMap<PathBuf, FileRole> =
-            kif_files(root).into_iter().map(|p| (p, FileRole::Editable)).collect();
+        let mut files: BTreeMap<PathBuf, FileRole> = kif_files(root)
+            .into_iter()
+            .map(|p| (p, FileRole::Editable))
+            .collect();
         for path in expand(root, &self.files.readonly)? {
             files.insert(path, FileRole::Library);
         }
@@ -251,7 +257,10 @@ mathlib = false
     fn parses_the_example_in_the_design_document() {
         let config = Config::parse(EXAMPLE).unwrap();
         assert_eq!(config.project.name, "stretch4-lab");
-        assert_eq!(config.files.readonly, [PathBuf::from("sumo"), PathBuf::from("ieee1872_terms.kif")]);
+        assert_eq!(
+            config.files.readonly,
+            [PathBuf::from("sumo"), PathBuf::from("ieee1872_terms.kif")]
+        );
         assert_eq!(config.checks["W002"], Severity::Off);
         assert_eq!(config.vampire.translation, Translation::Tff);
         assert_eq!(config.tests.paths, ["tests/*.tq"]);
@@ -268,7 +277,8 @@ mathlib = false
 
     #[test]
     fn unknown_key_is_an_error() {
-        let error = Config::parse("[project]\nname = \"x\"\n[format]\nline_widht = 80\n").unwrap_err();
+        let error =
+            Config::parse("[project]\nname = \"x\"\n[format]\nline_widht = 80\n").unwrap_err();
         assert!(error.to_string().contains("line_widht"), "{error}");
     }
 

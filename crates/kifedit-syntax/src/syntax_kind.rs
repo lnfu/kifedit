@@ -33,6 +33,7 @@ pub enum KifLanguage {}
 impl rowan::Language for KifLanguage {
     type Kind = SyntaxKind;
 
+    #[allow(unsafe_code)]
     fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
         assert!(raw.0 <= SyntaxKind::Error as u16);
         // SAFETY: SyntaxKind 是 repr(u16)，0..=Error 的每個值都是合法變體

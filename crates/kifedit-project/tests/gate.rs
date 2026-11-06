@@ -16,17 +16,18 @@ fn open() -> Option<(tempfile::TempDir, Project)> {
     }
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("kifedit.toml");
-    fs::write(
-        &config,
-        "[project]\nname = \"gate\"\n",
-    )
-    .unwrap();
+    fs::write(&config, "[project]\nname = \"gate\"\n").unwrap();
     fs::copy(&lab, dir.path().join("mm.kif")).unwrap();
     let project = Project::open(&config).unwrap();
     Some((dir, project))
 }
 
-fn find(project: &Project, relation: &str, first: &str, accept: impl Fn(&[Term]) -> bool) -> FormulaId {
+fn find(
+    project: &Project,
+    relation: &str,
+    first: &str,
+    accept: impl Fn(&[Term]) -> bool,
+) -> FormulaId {
     let symbol = |s| project.interner().get(s).unwrap();
     project
         .index()
@@ -70,7 +71,10 @@ fn check(project: &mut Project, edit: FormEdit, line: usize, removed: &[&str], a
 
     let inverse = project.apply_form(&edit).unwrap();
     let after = text(project);
-    assert_eq!(line_diff(&before, &after), (line, removed.to_vec(), added.to_vec()));
+    assert_eq!(
+        line_diff(&before, &after),
+        (line, removed.to_vec(), added.to_vec())
+    );
     assert_eq!(
         project.parse(LAB).unwrap().errors.len(),
         errors_before,
@@ -78,12 +82,17 @@ fn check(project: &mut Project, edit: FormEdit, line: usize, removed: &[&str], a
     );
 
     project.edit(LAB, &inverse).unwrap();
-    assert!(text(project) == before, "The inverse edit does not restore the file.");
+    assert!(
+        text(project) == before,
+        "The inverse edit does not restore the file."
+    );
 }
 
 #[test]
 fn g1_add_fact_after_the_last_formula_of_the_term() {
-    let Some((_dir, mut project)) = open() else { return };
+    let Some((_dir, mut project)) = open() else {
+        return;
+    };
     let edit = FormEdit::AddFact {
         file: LAB,
         relation: "rosFrameId".into(),
@@ -92,12 +101,20 @@ fn g1_add_fact_after_the_last_formula_of_the_term() {
             FormValue::Str("head_lidar_right".into()),
         ],
     };
-    check(&mut project, edit, 531, &[], &["(rosFrameId HeadLidarRight \"head_lidar_right\")"]);
+    check(
+        &mut project,
+        edit,
+        531,
+        &[],
+        &["(rosFrameId HeadLidarRight \"head_lidar_right\")"],
+    );
 }
 
 #[test]
 fn g2_change_one_argument() {
-    let Some((_dir, mut project)) = open() else { return };
+    let Some((_dir, mut project)) = open() else {
+        return;
+    };
     let formula = find(&project, "attribute", "SceneCameraArray", |args| {
         is(&project, &args[1], "InUseStatus")
     });
@@ -117,7 +134,9 @@ fn g2_change_one_argument() {
 
 #[test]
 fn g3_delete_fact() {
-    let Some((_dir, mut project)) = open() else { return };
+    let Some((_dir, mut project)) = open() else {
+        return;
+    };
     let formula = find(&project, "todoNote", "CeilingSceneCamera", |_| true);
     check(
         &mut project,
@@ -130,7 +149,9 @@ fn g3_delete_fact() {
 
 #[test]
 fn g4a_change_one_line_string() {
-    let Some((_dir, mut project)) = open() else { return };
+    let Some((_dir, mut project)) = open() else {
+        return;
+    };
     let formula = find(&project, "documentation", "CeilingSceneCamera", |_| true);
     let edit = FormEdit::ChangeString {
         formula,
@@ -148,7 +169,9 @@ fn g4a_change_one_line_string() {
 
 #[test]
 fn g4b_change_a_multi_line_string() {
-    let Some((_dir, mut project)) = open() else { return };
+    let Some((_dir, mut project)) = open() else {
+        return;
+    };
     let formula = find(&project, "documentation", "GripperCamera", |_| true);
     let Term::App(_, args) = &project.index().formula(formula).unwrap().term else {
         unreachable!()
@@ -176,7 +199,9 @@ fn g4b_change_a_multi_line_string() {
 
 #[test]
 fn invalid_form_values_are_rejected() {
-    let Some((_dir, project)) = open() else { return };
+    let Some((_dir, project)) = open() else {
+        return;
+    };
     let formula = find(&project, "documentation", "HeadCameraCenter", |_| true);
 
     let string = |text: &str| FormEdit::ChangeString {
@@ -184,7 +209,10 @@ fn invalid_form_values_are_rejected() {
         argument: 2,
         text: text.into(),
     };
-    assert_eq!(project.preview_form(&string("a \"b\"")), Err(FormError::QuotationMark));
+    assert_eq!(
+        project.preview_form(&string("a \"b\"")),
+        Err(FormError::QuotationMark)
+    );
 
     let change = |argument, value| FormEdit::ChangeArgument {
         formula,

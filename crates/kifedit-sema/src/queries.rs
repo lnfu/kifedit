@@ -14,7 +14,11 @@ pub trait SemaDb: Db {
 #[salsa::tracked]
 pub fn file_index(db: &dyn SemaDb, file: File) -> Arc<FileIndex> {
     let parse = kifedit_db::parse(db, file);
-    Arc::new(FileIndex::build(file.id(db), &parse.syntax(), db.interner()))
+    Arc::new(FileIndex::build(
+        file.id(db),
+        &parse.syntax(),
+        db.interner(),
+    ))
 }
 
 /// 整個專案的索引；只組合各檔的 Arc，不複製內容

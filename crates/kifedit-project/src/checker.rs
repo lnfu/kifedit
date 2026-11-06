@@ -139,7 +139,9 @@ fn check_round(
         .chain(rest(FileRole::Editable))
         .chain(rest(FileRole::Library));
     for id in order {
-        let Some(file) = snapshot.file(id) else { continue };
+        let Some(file) = snapshot.file(id) else {
+            continue;
+        };
         let diagnostics = snapshot.diagnostics(id);
         if !first.contains(&id) && sent.get(&id) == Some(&diagnostics) {
             continue;

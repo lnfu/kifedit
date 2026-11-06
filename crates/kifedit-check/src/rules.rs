@@ -45,7 +45,9 @@ impl<'db> Context<'db> {
 
     /// class 是 sub 本身或 sub 的祖先
     fn is_subclass(&self, sub: Symbol, class: Symbol) -> bool {
-        class_ancestors(self.db, self.project, self.key(sub)).binary_search(&class).is_ok()
+        class_ancestors(self.db, self.project, self.key(sub))
+            .binary_search(&class)
+            .is_ok()
     }
 }
 
@@ -84,11 +86,17 @@ fn undefined_terms(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
         return;
     }
     for form in forms(cx, file) {
-        for token in form.descendants_with_tokens().filter_map(SyntaxElement::into_token) {
+        for token in form
+            .descendants_with_tokens()
+            .filter_map(SyntaxElement::into_token)
+        {
             if token.kind() != SyntaxKind::Word {
                 continue;
             }
-            if cx.symbol(token.text()).is_some_and(|s| undefined.contains(&s)) {
+            if cx
+                .symbol(token.text())
+                .is_some_and(|s| undefined.contains(&s))
+            {
                 out.push(error(
                     "E002",
                     token.text_range(),
@@ -106,23 +114,40 @@ fn undefined_terms(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
 fn arguments(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
     let variable_arity = cx.symbol("VariableArityRelation");
     for form in forms(cx, file) {
-        for list in form.descendants().filter(|n| matches!(n.kind(), SyntaxKind::TopLevelForm | SyntaxKind::List)) {
+        for list in form
+            .descendants()
+            .filter(|n| matches!(n.kind(), SyntaxKind::TopLevelForm | SyntaxKind::List))
+        {
             let items: Vec<SyntaxElement> = list
                 .children_with_tokens()
-                .filter(|e| !matches!(e.kind(), SyntaxKind::Whitespace | SyntaxKind::Comment | SyntaxKind::LParen | SyntaxKind::RParen))
+                .filter(|e| {
+                    !matches!(
+                        e.kind(),
+                        SyntaxKind::Whitespace
+                            | SyntaxKind::Comment
+                            | SyntaxKind::LParen
+                            | SyntaxKind::RParen
+                    )
+                })
                 .collect();
-            let Some(SyntaxElement::Token(head)) = items.first() else { continue };
+            let Some(SyntaxElement::Token(head)) = items.first() else {
+                continue;
+            };
             if head.kind() != SyntaxKind::Word || LOGIC.contains(&head.text()) {
                 continue;
             }
-            let Some(relation) = cx.symbol(head.text()) else { continue };
+            let Some(relation) = cx.symbol(head.text()) else {
+                continue;
+            };
             let sig = signature(cx.db, cx.project, cx.key(relation));
             let args = &items[1..];
 
             if let Some(arity) = sig.arity {
                 let has_row = args.iter().any(|a| a.kind() == SyntaxKind::RowVar);
                 let variable = variable_arity.is_some_and(|v| {
-                    term_types(cx.db, cx.project, cx.key(relation)).all.contains(&v)
+                    term_types(cx.db, cx.project, cx.key(relation))
+                        .all
+                        .contains(&v)
                 });
                 if !has_row && !variable && args.len() != arity {
                     out.push(Diagnostic {
@@ -156,7 +181,12 @@ fn arguments(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
 }
 
 /// 參數不符合 domain 時回傳說明；無法判斷時（變數、類別未知）不回報
-fn argument_problem(cx: &Context, relation: &str, c: &Constraint, arg: &SyntaxElement) -> Option<String> {
+fn argument_problem(
+    cx: &Context,
+    relation: &str,
+    c: &Constraint,
+    arg: &SyntaxElement,
+) -> Option<String> {
     let class = cx.name(c.class);
     let position = c.position;
     match arg {
@@ -195,7 +225,9 @@ fn argument_problem(cx: &Context, relation: &str, c: &Constraint, arg: &SyntaxEl
                     .iter()
                     .filter_map(|n| cx.symbol(n))
                     .any(|n| cx.is_subclass(n, c.class))
-                    || cx.symbol("Number").is_some_and(|n| cx.is_subclass(c.class, n));
+                    || cx
+                        .symbol("Number")
+                        .is_some_and(|n| cx.is_subclass(c.class, n));
                 (!accepts).then(|| {
                     format!("Argument {position} of {relation} must be an instance of {class}. A number is not.")
                 })
@@ -230,8 +262,12 @@ fn cycles(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
         return;
     }
     for formula in file_index(cx.db, file).formulas() {
-        let Term::App(head, args) = &formula.term else { continue };
-        let (Term::Symbol(relation), [Term::Symbol(a), Term::Symbol(b)]) = (head.as_ref(), args.as_slice()) else {
+        let Term::App(head, args) = &formula.term else {
+            continue;
+        };
+        let (Term::Symbol(relation), [Term::Symbol(a), Term::Symbol(b)]) =
+            (head.as_ref(), args.as_slice())
+        else {
             continue;
         };
         let relation = cx.name(*relation);
@@ -252,14 +288,20 @@ fn cycles(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
 // E006：個體同時是兩個互斥類別的實例；每個個體在本檔的第一條 instance 事實回報一次
 fn disjoint(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
     let pairs = disjoint_pairs(cx.db, cx.project);
-    let Some(instance) = cx.symbol("instance") else { return };
+    let Some(instance) = cx.symbol("instance") else {
+        return;
+    };
     if pairs.is_empty() {
         return;
     }
     let mut seen = FxHashSet::default();
     for formula in file_index(cx.db, file).formulas() {
-        let Term::App(head, args) = &formula.term else { continue };
-        let (Term::Symbol(relation), [Term::Symbol(individual), _]) = (head.as_ref(), args.as_slice()) else {
+        let Term::App(head, args) = &formula.term else {
+            continue;
+        };
+        let (Term::Symbol(relation), [Term::Symbol(individual), _]) =
+            (head.as_ref(), args.as_slice())
+        else {
             continue;
         };
         if *relation != instance || !seen.insert(*individual) {
@@ -297,7 +339,11 @@ fn duplicates(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
             }
             std::collections::hash_map::Entry::Occupied(e) => out.push(Diagnostic {
                 related: vec![*e.get()],
-                ..error("W001", formula.range, "This formula is a duplicate of an earlier formula in this file.".to_string())
+                ..error(
+                    "W001",
+                    formula.range,
+                    "This formula is a duplicate of an earlier formula in this file.".to_string(),
+                )
             }),
         }
     }
@@ -316,22 +362,39 @@ fn declared_terms(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
     let relation = cx.symbol("Relation");
     let mut seen = FxHashSet::default();
     for formula in file_index(cx.db, file).formulas() {
-        let Term::App(head, args) = &formula.term else { continue };
-        let (Term::Symbol(r), Some(Term::Symbol(term))) = (head.as_ref(), args.first()) else { continue };
+        let Term::App(head, args) = &formula.term else {
+            continue;
+        };
+        let (Term::Symbol(r), Some(Term::Symbol(term))) = (head.as_ref(), args.first()) else {
+            continue;
+        };
         if !declaring.contains(r) || !seen.insert(*term) {
             continue;
         }
         let key = cx.key(*term);
         let name = cx.name(*term);
         if !has_documentation(cx.db, cx.project, key) {
-            out.push(error("W002", formula.range, format!("The term {name} has no documentation.")));
+            out.push(error(
+                "W002",
+                formula.range,
+                format!("The term {name} has no documentation."),
+            ));
         }
-        let is_relation = relation.is_some_and(|r| term_types(cx.db, cx.project, key).all.contains(&r));
+        let is_relation =
+            relation.is_some_and(|r| term_types(cx.db, cx.project, key).all.contains(&r));
         if is_relation && signature(cx.db, cx.project, key).domains.is_empty() {
-            out.push(error("W005", formula.range, format!("The relation {name} has no domain.")));
+            out.push(error(
+                "W005",
+                formula.range,
+                format!("The relation {name} has no domain."),
+            ));
         }
         if !referenced(cx.db, cx.project, key) {
-            out.push(error("I001", formula.range, format!("No other formula uses the term {name}.")));
+            out.push(error(
+                "I001",
+                formula.range,
+                format!("No other formula uses the term {name}."),
+            ));
         }
     }
 }
@@ -343,17 +406,31 @@ fn variables(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
             continue;
         }
         // W003：量詞的變數列表也算一次，所以「宣告後沒有使用」與「只用一次的自由變數」都會回報
-        let mut count: rustc_hash::FxHashMap<String, (usize, TextRange)> = rustc_hash::FxHashMap::default();
-        for token in form.descendants_with_tokens().filter_map(SyntaxElement::into_token) {
+        let mut count: rustc_hash::FxHashMap<String, (usize, TextRange)> =
+            rustc_hash::FxHashMap::default();
+        for token in form
+            .descendants_with_tokens()
+            .filter_map(SyntaxElement::into_token)
+        {
             if matches!(token.kind(), SyntaxKind::Var | SyntaxKind::RowVar) {
-                count.entry(token.text().to_string()).or_insert((0, token.text_range())).0 += 1;
+                count
+                    .entry(token.text().to_string())
+                    .or_insert((0, token.text_range()))
+                    .0 += 1;
             }
         }
-        let mut once: Vec<(&String, TextRange)> =
-            count.iter().filter(|(_, (n, _))| *n == 1).map(|(v, (_, r))| (v, *r)).collect();
+        let mut once: Vec<(&String, TextRange)> = count
+            .iter()
+            .filter(|(_, (n, _))| *n == 1)
+            .map(|(v, (_, r))| (v, *r))
+            .collect();
         once.sort_by_key(|(_, r)| r.start());
         for (var, range) in once {
-            out.push(error("W003", range, format!("The variable {var} occurs only one time in this rule.")));
+            out.push(error(
+                "W003",
+                range,
+                format!("The variable {var} occurs only one time in this rule."),
+            ));
         }
 
         // W004：走過頂層的量詞，找到 =>；右側的自由變數必須出現在左側
@@ -363,7 +440,9 @@ fn variables(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
             let items = items(&node);
             match head_word(&node).as_deref() {
                 Some("forall" | "exists") => {
-                    if let (Some(SyntaxElement::Node(vars)), Some(SyntaxElement::Node(body))) = (items.get(1), items.get(2)) {
+                    if let (Some(SyntaxElement::Node(vars)), Some(SyntaxElement::Node(body))) =
+                        (items.get(1), items.get(2))
+                    {
                         bound.extend(variable_names(vars));
                         node = body.clone();
                         continue;
@@ -371,7 +450,9 @@ fn variables(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
                     break;
                 }
                 Some("=>") => {
-                    let (Some(left), Some(right)) = (items.get(1), items.get(2)) else { break };
+                    let (Some(left), Some(right)) = (items.get(1), items.get(2)) else {
+                        break;
+                    };
                     let left: FxHashSet<String> = element_variables(left).into_iter().collect();
                     let mut free = Vec::new();
                     free_variables(right, &mut bound.clone(), &mut free);
@@ -397,7 +478,15 @@ fn variables(cx: &Context, file: File, out: &mut Vec<Diagnostic>) {
 /// 串列中除了括號、空白、註解以外的元素
 fn items(node: &SyntaxNode) -> Vec<SyntaxElement> {
     node.children_with_tokens()
-        .filter(|e| !matches!(e.kind(), SyntaxKind::Whitespace | SyntaxKind::Comment | SyntaxKind::LParen | SyntaxKind::RParen))
+        .filter(|e| {
+            !matches!(
+                e.kind(),
+                SyntaxKind::Whitespace
+                    | SyntaxKind::Comment
+                    | SyntaxKind::LParen
+                    | SyntaxKind::RParen
+            )
+        })
         .collect()
 }
 
@@ -419,22 +508,32 @@ fn variable_names(node: &SyntaxNode) -> Vec<String> {
 fn element_variables(element: &SyntaxElement) -> Vec<String> {
     match element {
         SyntaxElement::Node(n) => variable_names(n),
-        SyntaxElement::Token(t) if matches!(t.kind(), SyntaxKind::Var | SyntaxKind::RowVar) => vec![t.text().to_string()],
+        SyntaxElement::Token(t) if matches!(t.kind(), SyntaxKind::Var | SyntaxKind::RowVar) => {
+            vec![t.text().to_string()]
+        }
         SyntaxElement::Token(_) => Vec::new(),
     }
 }
 
 /// 不被內層量詞綁定的變數記號
-fn free_variables(element: &SyntaxElement, bound: &mut Vec<String>, out: &mut Vec<kifedit_syntax::SyntaxToken>) {
+fn free_variables(
+    element: &SyntaxElement,
+    bound: &mut Vec<String>,
+    out: &mut Vec<kifedit_syntax::SyntaxToken>,
+) {
     match element {
         SyntaxElement::Token(t) => {
-            if matches!(t.kind(), SyntaxKind::Var | SyntaxKind::RowVar) && !bound.iter().any(|b| b == t.text()) {
+            if matches!(t.kind(), SyntaxKind::Var | SyntaxKind::RowVar)
+                && !bound.iter().any(|b| b == t.text())
+            {
                 out.push(t.clone());
             }
         }
         SyntaxElement::Node(node) => {
             let items = items(node);
-            if let (Some("forall" | "exists"), Some(SyntaxElement::Node(vars))) = (head_word(node).as_deref(), items.get(1)) {
+            if let (Some("forall" | "exists"), Some(SyntaxElement::Node(vars))) =
+                (head_word(node).as_deref(), items.get(1))
+            {
                 let before = bound.len();
                 bound.extend(variable_names(vars));
                 for item in &items[2..] {
@@ -456,8 +555,8 @@ mod tests {
 
     use kifedit_sema::{FileId, Interner};
 
-    use crate::check_file;
     use super::*;
+    use crate::check_file;
 
     #[salsa::db]
     #[derive(Clone, Default)]
@@ -520,7 +619,10 @@ mod tests {
         let library = File::new(&db, FileId(0), LIBRARY.to_string());
         let lab = File::new(&db, FileId(1), lab.to_string());
         let project = ProjectInput::new(&db, vec![library, lab]);
-        let library_errors: Vec<_> = check_file(&db, project, library).iter().filter(|d| d.code.starts_with('E')).collect();
+        let library_errors: Vec<_> = check_file(&db, project, library)
+            .iter()
+            .filter(|d| d.code.starts_with('E'))
+            .collect();
         assert!(library_errors.is_empty(), "{library_errors:?}");
         let text = lab.text(&db).clone();
         check_file(&db, project, lab)
@@ -532,7 +634,10 @@ mod tests {
 
     #[test]
     fn e001_syntax_error() {
-        assert_eq!(diagnostics("(part A\n"), ["E001 (part A | The list has no closing parenthesis."]);
+        assert_eq!(
+            diagnostics("(part A\n"),
+            ["E001 (part A | The list has no closing parenthesis."]
+        );
     }
 
     #[test]
@@ -561,7 +666,9 @@ mod tests {
         let lab = "(instance Arm Device)\n(part Arm (WeightFn Arm))\n";
         assert_eq!(
             diagnostics(lab),
-            ["E004 (WeightFn Arm) | Argument 2 of part must be an instance of Object. WeightFn returns an instance of Quantity."]
+            [
+                "E004 (WeightFn Arm) | Argument 2 of part must be an instance of Object. WeightFn returns an instance of Quantity."
+            ]
         );
     }
 
@@ -575,7 +682,11 @@ mod tests {
         let lab = "(subclass Arm Hand)\n(subclass Hand Arm)\n(instance Hand Entity)\n";
         let found = diagnostics(lab);
         assert_eq!(found.len(), 2);
-        assert!(found.iter().all(|d| d.starts_with("E005") && d.contains("subclass hierarchy has a cycle")));
+        assert!(
+            found
+                .iter()
+                .all(|d| d.starts_with("E005") && d.contains("subclass hierarchy has a cycle"))
+        );
     }
 
     #[test]
@@ -583,7 +694,9 @@ mod tests {
         let lab = "(instance Rex Animal)\n(instance Rex Plant)\n";
         assert_eq!(
             diagnostics(lab),
-            ["E006 (instance Rex Animal) | Rex is an instance of Animal and Plant, but Animal and Plant are disjoint."]
+            [
+                "E006 (instance Rex Animal) | Rex is an instance of Animal and Plant, but Animal and Plant are disjoint."
+            ]
         );
     }
 
@@ -592,7 +705,9 @@ mod tests {
         let lab = "(instance Arm Device)\n(=> (part ?X ?Y) (part ?X ?Y))\n(=> (part ?A ?B) (part ?A ?B))\n";
         assert_eq!(
             diagnostics_with(lab, "W001"),
-            ["W001 (=> (part ?A ?B) (part ?A ?B)) | This formula is a duplicate of an earlier formula in this file."]
+            [
+                "W001 (=> (part ?A ?B) (part ?A ?B)) | This formula is a duplicate of an earlier formula in this file."
+            ]
         );
     }
 
@@ -601,9 +716,7 @@ mod tests {
         let lab = "(instance grips BinaryPredicate)\n(instance Arm Device)\n(documentation Arm EnglishLanguage \"An arm.\")\n(instance Hand Device)\n(documentation Hand EnglishLanguage \"A hand.\")\n(part Hand Arm)\n";
         assert_eq!(
             diagnostics_with(lab, "W00"),
-            [
-                "W002 (instance grips BinaryPredicate) | The term grips has no documentation.",
-            ]
+            ["W002 (instance grips BinaryPredicate) | The term grips has no documentation.",]
         );
         assert_eq!(
             diagnostics_with(lab, "I"),
@@ -617,7 +730,10 @@ mod tests {
     #[test]
     fn w005_relation_without_domain() {
         let lab = "(subclass BinaryPredicate Relation)\n(subclass Relation Entity)\n(instance grips BinaryPredicate)\n";
-        assert!(diagnostics_with(lab, "W005").iter().any(|d| d == "W005 (instance grips BinaryPredicate) | The relation grips has no domain."));
+        assert!(
+            diagnostics_with(lab, "W005").iter().any(|d| d
+                == "W005 (instance grips BinaryPredicate) | The relation grips has no domain.")
+        );
     }
 
     #[test]
@@ -641,4 +757,3 @@ mod tests {
         );
     }
 }
-

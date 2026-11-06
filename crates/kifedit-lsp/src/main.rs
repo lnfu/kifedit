@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kifedit_project::{CONFIG_FILE_NAME, Checker, FileRole, Project, Severity, Update, find_config};
+use kifedit_project::{
+    CONFIG_FILE_NAME, Checker, FileRole, Project, Severity, Update, find_config,
+};
 use kifedit_sema::FileId;
 use kifedit_syntax::{TextEdit, TextRange};
 use line_index::LineIndex;
@@ -47,8 +49,16 @@ impl LanguageServer for Backend {
             self.session.lock().unwrap().config = Some(config.clone());
             match tokio::task::spawn_blocking(move || Project::open(&config)).await {
                 Ok(Ok(project)) => self.session.lock().unwrap().project = Some(project),
-                Ok(Err(e)) => self.client.show_message(MessageType::ERROR, e.to_string()).await,
-                Err(e) => self.client.show_message(MessageType::ERROR, e.to_string()).await,
+                Ok(Err(e)) => {
+                    self.client
+                        .show_message(MessageType::ERROR, e.to_string())
+                        .await
+                }
+                Err(e) => {
+                    self.client
+                        .show_message(MessageType::ERROR, e.to_string())
+                        .await
+                }
             }
         }
         Ok(InitializeResult {
@@ -62,11 +72,13 @@ impl LanguageServer for Backend {
                 references_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 semantic_tokens_provider: Some(
-                    SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
-                        legend: semantic::legend(),
-                        full: Some(SemanticTokensFullOptions::Bool(true)),
-                        ..Default::default()
-                    }),
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: semantic::legend(),
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            ..Default::default()
+                        },
+                    ),
                 ),
                 ..Default::default()
             },
@@ -81,7 +93,14 @@ impl LanguageServer for Backend {
         let handle = tokio::runtime::Handle::current();
         // sink 不可在 checker 執行緒上鎖 session：checker 持有快照時，edit 會等快照被丟棄
         let checker = Checker::spawn(
-            move || shared.lock().unwrap().project.as_ref().map(Project::snapshot),
+            move || {
+                shared
+                    .lock()
+                    .unwrap()
+                    .project
+                    .as_ref()
+                    .map(Project::snapshot)
+            },
             move |update| {
                 let session = sink_session.clone();
                 let client = client.clone();
@@ -116,7 +135,11 @@ impl LanguageServer for Backend {
     // 關閉未儲存的檔案時，內容回到硬碟上的版本
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
-        if let Some(text) = uri.to_file_path().ok().and_then(|p| std::fs::read_to_string(p).ok()) {
+        if let Some(text) = uri
+            .to_file_path()
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+        {
             self.replace(&uri, text);
         }
         self.session.lock().unwrap().open.remove(&uri);
@@ -128,7 +151,11 @@ impl LanguageServer for Backend {
             .changes
             .iter()
             .any(|c| c.uri.path().ends_with(&format!("/{CONFIG_FILE_NAME}")));
-        let outcome = if config_changed { self.reopen().await } else { self.refresh() };
+        let outcome = if config_changed {
+            self.reopen().await
+        } else {
+            self.refresh()
+        };
         match outcome {
             Ok(removed) => {
                 for uri in removed {
@@ -147,8 +174,12 @@ impl LanguageServer for Backend {
         // 先放開鎖再 await
         let outcome = {
             let session = self.session.lock().unwrap();
-            let Some(project) = session.project.as_ref() else { return Ok(None) };
-            let Some(id) = file_id(project, &params.text_document.uri) else { return Ok(None) };
+            let Some(project) = session.project.as_ref() else {
+                return Ok(None);
+            };
+            let Some(id) = file_id(project, &params.text_document.uri) else {
+                return Ok(None);
+            };
             format::file_edit(project, id).map(|edit| {
                 let index = LineIndex::new(project.text(id).unwrap_or_default());
                 edit.map(|e| tower_lsp::lsp_types::TextEdit {
@@ -160,7 +191,9 @@ impl LanguageServer for Backend {
         match outcome {
             Ok(edit) => Ok(Some(edit.into_iter().collect())),
             Err(message) => {
-                self.client.show_message(MessageType::WARNING, message).await;
+                self.client
+                    .show_message(MessageType::WARNING, message)
+                    .await;
                 Ok(None)
             }
         }
@@ -171,8 +204,12 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
-        let Some(id) = file_id(project, &params.text_document.uri) else { return Ok(None) };
+        let Some(project) = session.project.as_ref() else {
+            return Ok(None);
+        };
+        let Some(id) = file_id(project, &params.text_document.uri) else {
+            return Ok(None);
+        };
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: semantic::tokens(project, id),
@@ -181,7 +218,9 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some(project) = session.project.as_ref() else {
+            return Ok(None);
+        };
         let Some((file, name, range)) = word_at(project, &params.text_document_position_params)
         else {
             return Ok(None);
@@ -201,7 +240,9 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
         let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some(project) = session.project.as_ref() else {
+            return Ok(None);
+        };
         let Some((_, name, _)) = word_at(project, &params.text_document_position_params) else {
             return Ok(None);
         };
@@ -211,7 +252,9 @@ impl LanguageServer for Backend {
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some(project) = session.project.as_ref() else {
+            return Ok(None);
+        };
         let Some((_, name, _)) = word_at(project, &params.text_document_position) else {
             return Ok(None);
         };
@@ -227,7 +270,9 @@ impl LanguageServer for Backend {
             return Ok(Some(Vec::new()));
         }
         let session = self.session.lock().unwrap();
-        let Some(project) = session.project.as_ref() else { return Ok(None) };
+        let Some(project) = session.project.as_ref() else {
+            return Ok(None);
+        };
         let found = term::symbols(project, &params.query);
         let places = each_location(project, found.iter().map(|s| (s.2, s.3)).collect());
         Ok(Some(
@@ -260,7 +305,10 @@ fn symbol_kind(kinds: &[&str]) -> SymbolKind {
 }
 
 fn locations(project: &Project, ranges: Vec<(FileId, TextRange)>) -> Vec<Location> {
-    each_location(project, ranges).into_iter().flatten().collect()
+    each_location(project, ranges)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// 位元組範圍 → LSP Location，與輸入一對一；每個檔案只建一次 LineIndex
@@ -318,26 +366,42 @@ struct TermParams {
 impl Backend {
     async fn term_page(&self, params: TermParams) -> Result<term_page::TermPage> {
         let session = self.session.lock().unwrap();
-        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        let project = session
+            .project
+            .as_ref()
+            .ok_or_else(|| failure(NO_PROJECT))?;
         Ok(term_page::build(project, &params.name))
     }
 
     async fn editable_files(&self) -> Result<Vec<EditableFile>> {
         let session = self.session.lock().unwrap();
-        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        let project = session
+            .project
+            .as_ref()
+            .ok_or_else(|| failure(NO_PROJECT))?;
         Ok(project
             .files()
             .filter(|f| f.role == FileRole::Editable)
-            .map(|f| EditableFile { id: f.id.0, path: f.path.display().to_string() })
+            .map(|f| EditableFile {
+                id: f.id.0,
+                path: f.path.display().to_string(),
+            })
             .collect())
     }
 
     async fn preview_form(&self, params: FormParams) -> Result<forms::Preview> {
         let session = self.session.lock().unwrap();
-        let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+        let project = session
+            .project
+            .as_ref()
+            .ok_or_else(|| failure(NO_PROJECT))?;
         let (file, edit) = params.input.into_edit();
-        let edits = project.preview_form(&edit).map_err(|e| failure(e.to_string()))?;
-        let before = project.text(FileId(file)).ok_or_else(|| failure("There is no file with this ID."))?;
+        let edits = project
+            .preview_form(&edit)
+            .map_err(|e| failure(e.to_string()))?;
+        let before = project
+            .text(FileId(file))
+            .ok_or_else(|| failure("There is no file with this ID."))?;
         let mut after = before.to_string();
         kifedit_syntax::apply_edits(&mut after, &edits).map_err(|e| failure(e.to_string()))?;
         Ok(forms::line_diff(before, &after))
@@ -347,23 +411,36 @@ impl Backend {
     async fn apply_form(&self, params: FormParams) -> Result<()> {
         let change = {
             let session = self.session.lock().unwrap();
-            let project = session.project.as_ref().ok_or_else(|| failure(NO_PROJECT))?;
+            let project = session
+                .project
+                .as_ref()
+                .ok_or_else(|| failure(NO_PROJECT))?;
             let (file, edit) = params.input.into_edit();
             let file = FileId(file);
-            let edits = project.preview_form(&edit).map_err(|e| failure(e.to_string()))?;
-            let source = project.file(file).ok_or_else(|| failure("There is no file with this ID."))?;
-            let uri = Url::from_file_path(&source.path).map_err(|_| failure("The file path is not valid."))?;
+            let edits = project
+                .preview_form(&edit)
+                .map_err(|e| failure(e.to_string()))?;
+            let source = project
+                .file(file)
+                .ok_or_else(|| failure("There is no file with this ID."))?;
+            let uri = Url::from_file_path(&source.path)
+                .map_err(|_| failure("The file path is not valid."))?;
             let index = LineIndex::new(project.text(file).unwrap_or_default());
             let edits = edits
                 .into_iter()
-                .map(|e| tower_lsp::lsp_types::TextEdit { range: index.range(e.range), new_text: e.new_text })
+                .map(|e| tower_lsp::lsp_types::TextEdit {
+                    range: index.range(e.range),
+                    new_text: e.new_text,
+                })
                 .collect();
             WorkspaceEdit::new(HashMap::from([(uri, edits)]))
         };
         let response = self.client.apply_edit(change).await?;
         if !response.applied {
             return Err(failure(
-                response.failure_reason.unwrap_or_else(|| "VS Code did not apply the change.".into()),
+                response
+                    .failure_reason
+                    .unwrap_or_else(|| "VS Code did not apply the change.".into()),
             ));
         }
         Ok(())
@@ -371,13 +448,19 @@ impl Backend {
 
     async fn tree_children(&self, params: tree::TreeParams) -> Result<Vec<tree::TreeNode>> {
         let session = self.session.lock().unwrap();
-        Ok(session.project.as_ref().map(|p| tree::children(p, &params)).unwrap_or_default())
+        Ok(session
+            .project
+            .as_ref()
+            .map(|p| tree::children(p, &params))
+            .unwrap_or_default())
     }
 
     async fn query(&self, params: query::QueryParams) -> Result<query::QueryOutcome<Location>> {
         let session = self.session.lock().unwrap();
         let Some(project) = session.project.as_ref() else {
-            return Ok(query::QueryOutcome::Error { message: "There is no open project.".into() });
+            return Ok(query::QueryOutcome::Error {
+                message: "There is no open project.".into(),
+            });
         };
         let (columns, rows) = match query::run(project, &params.query) {
             query::QueryOutcome::Answers { columns, rows } => (columns, rows),
@@ -388,7 +471,10 @@ impl Backend {
                 return Ok(query::QueryOutcome::Error { message });
             }
         };
-        let ranges = rows.iter().flat_map(|r| r.support.iter().map(|s| s.location)).collect();
+        let ranges = rows
+            .iter()
+            .flat_map(|r| r.support.iter().map(|s| s.location))
+            .collect();
         let mut places = each_location(project, ranges).into_iter();
         let rows = rows
             .into_iter()
@@ -398,7 +484,10 @@ impl Backend {
                     .support
                     .into_iter()
                     .filter_map(|s| {
-                        Some(query::Support { text: s.text, location: places.next()?? })
+                        Some(query::Support {
+                            text: s.text,
+                            location: places.next()??,
+                        })
                     })
                     .collect(),
             })
@@ -421,9 +510,15 @@ impl Backend {
     fn replace(&self, uri: &Url, text: String) {
         let mut session = self.session.lock().unwrap();
         session.open.insert(uri.clone(), text.clone());
-        let Session { project, checker, .. } = &mut *session;
-        let Some(project) = project.as_mut() else { return };
-        let Some(id) = file_id(project, uri) else { return };
+        let Session {
+            project, checker, ..
+        } = &mut *session;
+        let Some(project) = project.as_mut() else {
+            return;
+        };
+        let Some(id) = file_id(project, uri) else {
+            return;
+        };
         if set_text(project, id, text) {
             if let Some(checker) = checker {
                 checker.edited(id);
@@ -434,9 +529,17 @@ impl Backend {
     /// 依磁碟與 .kifignore 更新專案的檔案；回傳被移除的檔案，以清除它們的診斷
     fn refresh(&self) -> std::result::Result<Vec<Url>, String> {
         let mut session = self.session.lock().unwrap();
-        let Session { project, checker, open, .. } = &mut *session;
-        let Some(project) = project.as_mut() else { return Ok(Vec::new()) };
-        let before: HashMap<FileId, PathBuf> = project.files().map(|f| (f.id, f.path.clone())).collect();
+        let Session {
+            project,
+            checker,
+            open,
+            ..
+        } = &mut *session;
+        let Some(project) = project.as_mut() else {
+            return Ok(Vec::new());
+        };
+        let before: HashMap<FileId, PathBuf> =
+            project.files().map(|f| (f.id, f.path.clone())).collect();
         let changes = project.refresh_files().map_err(|e| e.to_string())?;
         if changes == Default::default() {
             return Ok(Vec::new());
@@ -455,7 +558,9 @@ impl Backend {
 
     /// kifedit.toml 改變時重新開啟專案。開啟失敗時保留原本的專案
     async fn reopen(&self) -> std::result::Result<Vec<Url>, String> {
-        let Some(config) = self.session.lock().unwrap().config.clone() else { return Ok(Vec::new()) };
+        let Some(config) = self.session.lock().unwrap().config.clone() else {
+            return Ok(Vec::new());
+        };
         let mut project = tokio::task::spawn_blocking(move || Project::open(&config))
             .await
             .map_err(|e| e.to_string())?
@@ -495,8 +600,15 @@ fn set_text(project: &mut Project, id: FileId, text: String) -> bool {
 // 新加入專案的檔案若已在編輯器中開啟，以編輯器的內容（可能未存檔）為準
 fn use_open_texts(project: &mut Project, open: &HashMap<Url, String>, ids: &[FileId]) {
     for &id in ids {
-        let Some(path) = project.file(id).map(|f| f.path.clone()) else { continue };
-        let Some(text) = Url::from_file_path(&path).ok().and_then(|uri| open.get(&uri)) else { continue };
+        let Some(path) = project.file(id).map(|f| f.path.clone()) else {
+            continue;
+        };
+        let Some(text) = Url::from_file_path(&path)
+            .ok()
+            .and_then(|uri| open.get(&uri))
+        else {
+            continue;
+        };
         set_text(project, id, text.clone());
     }
 }

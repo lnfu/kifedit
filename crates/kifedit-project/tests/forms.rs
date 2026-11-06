@@ -25,7 +25,10 @@ fn add(relation: &str, args: &[&str]) -> FormEdit {
     FormEdit::AddFact {
         file: FileId(1),
         relation: relation.into(),
-        args: args.iter().map(|a| FormValue::Symbol((*a).into())).collect(),
+        args: args
+            .iter()
+            .map(|a| FormValue::Symbol((*a).into()))
+            .collect(),
     }
 }
 

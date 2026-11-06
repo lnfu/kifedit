@@ -185,7 +185,10 @@ mod tests {
         let interner = Interner::default();
         let index = index_of(&[CAMERA], &interner);
         let camera = interner.get("Camera").unwrap();
-        assert_eq!(indices(index.mentions(camera)), [(0, 0), (0, 1), (0, 2), (0, 3)]);
+        assert_eq!(
+            indices(index.mentions(camera)),
+            [(0, 0), (0, 1), (0, 2), (0, 3)]
+        );
     }
 
     #[test]
@@ -193,7 +196,10 @@ mod tests {
         let interner = Interner::default();
         let index = index_of(&[CAMERA], &interner);
         assert_eq!(index.mentions(interner.get("?X").unwrap()).count(), 0);
-        assert_eq!(index.mentions(interner.get("A camera.").unwrap()).count(), 0);
+        assert_eq!(
+            index.mentions(interner.get("A camera.").unwrap()).count(),
+            0
+        );
     }
 
     #[test]

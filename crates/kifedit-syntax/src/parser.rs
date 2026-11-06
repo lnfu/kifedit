@@ -31,10 +31,10 @@ pub fn parse(src: &str) -> Parse {
 
 struct Parser<'a> {
     tokens: Vec<Token<'a>>,
-    pos: usize,    // 下一個記號的索引
-    offset: TextSize, // 下一個記號的位元組位置
+    pos: usize,            // 下一個記號的索引
+    offset: TextSize,      // 下一個記號的位元組位置
     content_end: TextSize, // 最後一個非空白記號的結尾
-    depth: usize,  // 目前未閉合的串列數
+    depth: usize,          // 目前未閉合的串列數
     builder: GreenNodeBuilder<'static>,
     errors: Vec<SyntaxError>,
 }
@@ -207,7 +207,9 @@ mod tests {
 
     #[test]
     fn nested_lists() {
-        check("(a (b c))", expect![[r#"
+        check(
+            "(a (b c))",
+            expect![[r#"
             File@0..9
               TopLevelForm@0..9
                 LParen@0..1 "("
@@ -220,12 +222,15 @@ mod tests {
                   Word@6..7 "c"
                   RParen@7..8 ")"
                 RParen@8..9 ")"
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn unclosed_form_stops_at_line_start_paren() {
-        check("(a (b\n(c d)\n", expect![[r#"
+        check(
+            "(a (b\n(c d)\n",
+            expect![[r#"
             File@0..12
               Error@0..6
                 LParen@0..1 "("
@@ -243,13 +248,16 @@ mod tests {
                 RParen@10..11 ")"
               Whitespace@11..12 "\n"
             E001 0..5: The list has no closing parenthesis.
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn line_start_paren_in_closed_form_does_not_split() {
         // Biography.kif:428 的寫法
-        check("(=>\n(a ?P)\n(b ?P))\n(c)\n", expect![[r#"
+        check(
+            "(=>\n(a ?P)\n(b ?P))\n(c)\n",
+            expect![[r#"
             File@0..23
               TopLevelForm@0..18
                 LParen@0..1 "("
@@ -275,12 +283,15 @@ mod tests {
                 Word@20..21 "c"
                 RParen@21..22 ")"
               Whitespace@22..23 "\n"
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn indented_paren_does_not_split_form() {
-        check("(a\n  (b c))\n(d)", expect![[r#"
+        check(
+            "(a\n  (b c))\n(d)",
+            expect![[r#"
             File@0..15
               TopLevelForm@0..11
                 LParen@0..1 "("
@@ -298,12 +309,15 @@ mod tests {
                 LParen@12..13 "("
                 Word@13..14 "d"
                 RParen@14..15 ")"
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn stray_tokens_at_top_level() {
-        check("(a)) b\n", expect![[r#"
+        check(
+            "(a)) b\n",
+            expect![[r#"
             File@0..7
               TopLevelForm@0..3
                 LParen@0..1 "("
@@ -317,12 +331,15 @@ mod tests {
               Whitespace@6..7 "\n"
             E001 3..4: This closing parenthesis has no opening parenthesis.
             E001 5..6: A top-level form must start with an opening parenthesis.
-        "#]]);
+        "#]],
+        );
     }
 
     #[test]
     fn unclosed_string() {
-        check("(a \"oops", expect![[r#"
+        check(
+            "(a \"oops",
+            expect![[r#"
             File@0..8
               Error@0..8
                 LParen@0..1 "("
@@ -330,6 +347,7 @@ mod tests {
                 Whitespace@2..3 " "
                 ErrorToken@3..8 "\"oops"
             E001 3..8: The string has no closing quotation mark.
-        "#]]);
+        "#]],
+        );
     }
 }

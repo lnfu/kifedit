@@ -122,7 +122,10 @@ impl Project {
             } => {
                 let (_, node) = self.form_node(*formula)?;
                 let element = argument_element(&node, *argument)?;
-                Ok(vec![TextEdit::replace(element.text_range(), value.render()?)])
+                Ok(vec![TextEdit::replace(
+                    element.text_range(),
+                    value.render()?,
+                )])
             }
             FormEdit::DeleteFact { formula } => {
                 let (file, node) = self.form_node(*formula)?;
@@ -180,7 +183,12 @@ impl Project {
         Ok((file, node))
     }
 
-    fn add_fact(&self, id: FileId, relation: &str, args: &[FormValue]) -> Result<Vec<TextEdit>, FormError> {
+    fn add_fact(
+        &self,
+        id: FileId,
+        relation: &str,
+        args: &[FormValue],
+    ) -> Result<Vec<TextEdit>, FormError> {
         let file = self.editable_file(id)?;
         if args.is_empty() {
             return Err(FormError::EmptyFact);
@@ -262,7 +270,11 @@ fn line_end(text: &str, offset: TextSize) -> TextSize {
     let start = usize::from(offset);
     let rest = &text[start..];
     let len = rest.find('\n').unwrap_or(rest.len());
-    let len = if rest[..len].ends_with('\r') { len - 1 } else { len };
+    let len = if rest[..len].ends_with('\r') {
+        len - 1
+    } else {
+        len
+    };
     TextSize::from((start + len) as u32)
 }
 
@@ -272,7 +284,9 @@ fn delete_range(text: &str, form: TextRange) -> TextRange {
     let end = usize::from(form.end());
 
     let line_start = text[..start].rfind('\n').map_or(0, |i| i + 1);
-    let alone_before = text[line_start..start].chars().all(|c| c == ' ' || c == '\t');
+    let alone_before = text[line_start..start]
+        .chars()
+        .all(|c| c == ' ' || c == '\t');
 
     let rest = &text[end..];
     let line_len = rest.find('\n').map_or(rest.len(), |i| i + 1);

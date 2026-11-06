@@ -13,7 +13,11 @@ fn write_project(dir: &Path, files: &str) -> PathBuf {
     fs::write(dir.join("base.kif"), LIBRARY).unwrap();
     fs::write(dir.join("lab.kif"), EDITABLE).unwrap();
     let config = dir.join("kifedit.toml");
-    fs::write(&config, format!("[project]\nname = \"test\"\n\n[files]\n{files}")).unwrap();
+    fs::write(
+        &config,
+        format!("[project]\nname = \"test\"\n\n[files]\n{files}"),
+    )
+    .unwrap();
     config
 }
 
@@ -76,14 +80,25 @@ fn missing_file_is_an_error() {
     let config = write_project(dir.path(), "readonly = [\"missing.kif\"]\n");
     let error = Project::open(&config).unwrap_err();
     assert!(matches!(error, ProjectError::Read { .. }));
-    assert!(error.to_string().starts_with("Cannot read the file"), "{error}");
-
+    assert!(
+        error.to_string().starts_with("Cannot read the file"),
+        "{error}"
+    );
 }
 
 fn paths(project: &Project, root: &Path) -> Vec<(String, FileRole)> {
     let mut out: Vec<_> = project
         .files()
-        .map(|f| (f.path.strip_prefix(root).unwrap_or(&f.path).display().to_string(), f.role))
+        .map(|f| {
+            (
+                f.path
+                    .strip_prefix(root)
+                    .unwrap_or(&f.path)
+                    .display()
+                    .to_string(),
+                f.role,
+            )
+        })
         .collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
@@ -134,7 +149,10 @@ fn readonly_directory_can_be_outside_the_project() {
     fs::write(outside.path().join("Merge.kif"), LIBRARY).unwrap();
     let config = write_project(dir.path(), &format!("readonly = [{:?}]\n", outside.path()));
     let project = Project::open(&config).unwrap();
-    let merge = project.files().find(|f| f.path.ends_with("Merge.kif")).unwrap();
+    let merge = project
+        .files()
+        .find(|f| f.path.ends_with("Merge.kif"))
+        .unwrap();
     assert_eq!(merge.role, FileRole::Library);
     assert_eq!(project.files().count(), 3);
 }
@@ -144,7 +162,10 @@ fn pattern_without_matches_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let config = write_project(dir.path(), "readonly = [\"sumo/*.kif\"]\n");
     let error = Project::open(&config).unwrap_err();
-    assert!(matches!(&error, ProjectError::NoMatch { pattern } if pattern == "sumo/*.kif"), "{error}");
+    assert!(
+        matches!(&error, ProjectError::NoMatch { pattern } if pattern == "sumo/*.kif"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -204,7 +225,10 @@ fn checks_section_changes_or_removes_rules() {
     };
     // lab.kif：instance 未宣告（E002）、HeadCamera 沒有說明（W002）、沒有被引用（I001）
     assert_eq!(codes(""), ["I001 Info", "W002 Warning", "E002 Error"]);
-    assert_eq!(codes("W002 = \"off\"\nE002 = \"warning\""), ["I001 Info", "E002 Warning"]);
+    assert_eq!(
+        codes("W002 = \"off\"\nE002 = \"warning\""),
+        ["I001 Info", "E002 Warning"]
+    );
 }
 
 #[test]
@@ -226,7 +250,9 @@ fn refresh_files_adds_and_removes_files_and_keeps_ids() {
     fs::write(dir.path().join("new.kif"), "(instance Arm Camera)\n").unwrap();
     let changes = project.refresh_files().unwrap();
     assert!(changes.removed.is_empty());
-    let [new] = changes.added[..] else { panic!("{changes:?}") };
+    let [new] = changes.added[..] else {
+        panic!("{changes:?}")
+    };
     assert_eq!(project.file(new).unwrap().role, FileRole::Editable);
     let name = |p: &Project, s| p.interner().get(s).unwrap();
     assert_eq!(
@@ -239,7 +265,12 @@ fn refresh_files_adds_and_removes_files_and_keeps_ids() {
     assert_eq!(project.refresh_files().unwrap().removed, [new]);
     assert!(project.file(new).is_none());
     assert_eq!(project.file_id(&dir.path().join("lab.kif")), Some(lab));
-    assert!(project.taxonomy().instance_of(name(&project, "Arm")).is_empty());
+    assert!(
+        project
+            .taxonomy()
+            .instance_of(name(&project, "Arm"))
+            .is_empty()
+    );
 
     fs::write(dir.path().join("new.kif"), "").unwrap();
     assert_eq!(project.refresh_files().unwrap().added, [new]);
@@ -250,7 +281,9 @@ fn refresh_files_keeps_unsaved_text_and_follows_kifignore() {
     let dir = tempfile::tempdir().unwrap();
     let mut project = small_project(dir.path());
     let lab = project.file_id(&dir.path().join("lab.kif")).unwrap();
-    project.edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")]).unwrap();
+    project
+        .edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")])
+        .unwrap();
 
     fs::write(dir.path().join(".kifignore"), "lab.kif\n").unwrap();
     assert_eq!(project.refresh_files().unwrap().removed, [lab]);
@@ -259,7 +292,9 @@ fn refresh_files_keeps_unsaved_text_and_follows_kifignore() {
     assert_eq!(project.refresh_files().unwrap().added, [lab]);
     assert_eq!(project.text(lab), Some(EDITABLE));
 
-    project.edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")]).unwrap();
+    project
+        .edit(lab, &[TextEdit::insert(0.into(), "; unsaved\n")])
+        .unwrap();
     assert_eq!(project.refresh_files().unwrap(), Default::default());
     assert_eq!(project.text(lab).unwrap(), format!("; unsaved\n{EDITABLE}"));
 }

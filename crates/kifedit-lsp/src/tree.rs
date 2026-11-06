@@ -25,7 +25,9 @@ pub fn children(project: &Project, params: &TreeParams) -> Vec<TreeNode> {
     match params.view.as_str() {
         "classes" => taxonomy_children(project, "Entity", None, node),
         "relations" => taxonomy_children(project, "Relation", Some(&taxonomy.subrelation), node),
-        "attributes" => taxonomy_children(project, "Attribute", Some(&taxonomy.sub_attribute), node),
+        "attributes" => {
+            taxonomy_children(project, "Attribute", Some(&taxonomy.sub_attribute), node)
+        }
         _ => Vec::new(),
     }
 }
@@ -46,13 +48,22 @@ fn taxonomy_children(
         None => match interner.get(root).filter(|&s| classes.contains(s)) {
             Some(root) => (vec![root], Vec::new()),
             None => (
-                classes.nodes().filter(|&s| classes.parents(s).is_empty()).collect(),
+                classes
+                    .nodes()
+                    .filter(|&s| classes.parents(s).is_empty())
+                    .collect(),
                 Vec::new(),
             ),
         },
         Some(name) => match interner.get(name) {
-            Some(s) if is_class(s) => (classes.children(s).to_vec(), taxonomy.instances_of(s).to_vec()),
-            Some(s) => (Vec::new(), members.map(|h| h.children(s).to_vec()).unwrap_or_default()),
+            Some(s) if is_class(s) => (
+                classes.children(s).to_vec(),
+                taxonomy.instances_of(s).to_vec(),
+            ),
+            Some(s) => (
+                Vec::new(),
+                members.map(|h| h.children(s).to_vec()).unwrap_or_default(),
+            ),
             None => (Vec::new(), Vec::new()),
         },
     };
@@ -67,7 +78,12 @@ fn taxonomy_children(
     };
     let class_nodes = class_list.into_iter().map(|s| {
         let has_children = !classes.children(s).is_empty() || !taxonomy.instances_of(s).is_empty();
-        term_node(s, "class", has_children, classes.parents(s).len().saturating_sub(1))
+        term_node(
+            s,
+            "class",
+            has_children,
+            classes.parents(s).len().saturating_sub(1),
+        )
     });
     let member_nodes = member_list.into_iter().map(|s| {
         let has_children = members.is_some_and(|h| !h.children(s).is_empty());

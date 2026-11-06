@@ -55,14 +55,19 @@ pub fn evaluate(
     let (relation, args) = match pattern {
         Term::App(head, args) => match head.as_ref() {
             Term::Symbol(relation) => (*relation, args.as_slice()),
-            Term::Var(_) | Term::RowVar(_) => return QueryResult::NeedsProver(NeedsProver::VariableRelation),
+            Term::Var(_) | Term::RowVar(_) => {
+                return QueryResult::NeedsProver(NeedsProver::VariableRelation);
+            }
             _ => return QueryResult::NeedsProver(NeedsProver::NotARelation),
         },
         Term::Logic(..) => return QueryResult::NeedsProver(NeedsProver::LogicalOperators),
         Term::Quant(..) => return QueryResult::NeedsProver(NeedsProver::Quantifier),
         _ => return QueryResult::NeedsProver(NeedsProver::NotARelation),
     };
-    if !args.iter().all(|a| matches!(a, Term::Var(_)) || is_ground(a)) {
+    if !args
+        .iter()
+        .all(|a| matches!(a, Term::Var(_)) || is_ground(a))
+    {
         return QueryResult::NeedsProver(NeedsProver::ComplexArgument);
     }
 
@@ -123,10 +128,20 @@ impl Context<'_> {
             .collect()
     }
 
-    fn hierarchy(&self, hierarchy: &Hierarchy, relation: Symbol, a: &Term, b: &Term) -> Vec<Candidate> {
+    fn hierarchy(
+        &self,
+        hierarchy: &Hierarchy,
+        relation: Symbol,
+        a: &Term,
+        b: &Term,
+    ) -> Vec<Candidate> {
         let pairs: Vec<(Symbol, Symbol)> = match (a, b) {
             (Term::Symbol(a), _) => hierarchy.ancestors(*a).iter().map(|&b| (*a, b)).collect(),
-            (_, Term::Symbol(b)) => hierarchy.descendants(*b).into_iter().map(|a| (a, *b)).collect(),
+            (_, Term::Symbol(b)) => hierarchy
+                .descendants(*b)
+                .into_iter()
+                .map(|a| (a, *b))
+                .collect(),
             (Term::Var(_), Term::Var(_)) => hierarchy
                 .nodes()
                 .flat_map(|a| hierarchy.ancestors(a).iter().map(move |&b| (a, b)))
@@ -164,7 +179,12 @@ impl Context<'_> {
         out
     }
 
-    fn direct_facts(&self, relation: Symbol, first: Symbol, accept: impl Fn(Symbol) -> bool) -> Vec<FormulaId> {
+    fn direct_facts(
+        &self,
+        relation: Symbol,
+        first: Symbol,
+        accept: impl Fn(Symbol) -> bool,
+    ) -> Vec<FormulaId> {
         self.index
             .facts(relation, first)
             .filter(|f| match &f.term {
@@ -248,7 +268,13 @@ mod tests {
 
         fn run(&self, query: &str, limit: usize) -> QueryResult {
             let formulas = lower_file(FileId(1), &parse(query).syntax(), &self.interner);
-            evaluate(&formulas[0].term, &self.index, &self.taxonomy, &self.interner, limit)
+            evaluate(
+                &formulas[0].term,
+                &self.index,
+                &self.taxonomy,
+                &self.interner,
+                limit,
+            )
         }
 
         // 每個答案寫成 "?X=HeadCamera" 這種形式，多個綁定以空格分開
@@ -288,7 +314,10 @@ mod tests {
     #[test]
     fn instances_include_instances_of_subclasses() {
         let kb = Kb::new();
-        assert_eq!(kb.answers("(instance ?X Camera)"), ["?X=GripperCamera", "?X=HeadCamera"]);
+        assert_eq!(
+            kb.answers("(instance ?X Camera)"),
+            ["?X=GripperCamera", "?X=HeadCamera"]
+        );
     }
 
     #[test]
@@ -314,13 +343,22 @@ mod tests {
             panic!("The query needs a prover.");
         };
         // (instance HeadCamera VideoCamera) 是第 4 條公式（編號 3）
-        assert_eq!(answers[0].support, [FormulaId { file: FileId(0), index: 3 }]);
+        assert_eq!(
+            answers[0].support,
+            [FormulaId {
+                file: FileId(0),
+                index: 3
+            }]
+        );
     }
 
     #[test]
     fn subclass_uses_the_closure() {
         let kb = Kb::new();
-        assert_eq!(kb.answers("(subclass ?A Device)"), ["?A=Camera", "?A=VideoCamera"]);
+        assert_eq!(
+            kb.answers("(subclass ?A Device)"),
+            ["?A=Camera", "?A=VideoCamera"]
+        );
         assert_eq!(
             kb.answers("(subclass VideoCamera ?B)"),
             ["?B=Camera", "?B=Device", "?B=Artifact"]
@@ -330,14 +368,20 @@ mod tests {
     #[test]
     fn relation_includes_facts_of_subrelations() {
         let kb = Kb::new();
-        assert_eq!(kb.answers("(robotPart ?X MyRobot)"), ["?X=BaseDrive", "?X=HeadCamera"]);
+        assert_eq!(
+            kb.answers("(robotPart ?X MyRobot)"),
+            ["?X=BaseDrive", "?X=HeadCamera"]
+        );
     }
 
     #[test]
     fn values_can_be_strings_and_function_terms() {
         let kb = Kb::new();
         assert_eq!(kb.answers("(rosTopic HeadCamera ?T)"), ["?T=\"/head\""]);
-        assert_eq!(kb.answers("(monetaryValue X ?V)"), ["?V=(MeasureFn 30 Hertz)"]);
+        assert_eq!(
+            kb.answers("(monetaryValue X ?V)"),
+            ["?V=(MeasureFn 30 Hertz)"]
+        );
     }
 
     #[test]
@@ -358,7 +402,13 @@ mod tests {
         };
         assert_eq!(reason("(and (a) (b))"), NeedsProver::LogicalOperators);
         assert_eq!(reason("(exists (?X) (p ?X))"), NeedsProver::Quantifier);
-        assert_eq!(reason("(?R HeadCamera MyRobot)"), NeedsProver::VariableRelation);
-        assert_eq!(reason("(monetaryValue X (MeasureFn ?N Hertz))"), NeedsProver::ComplexArgument);
+        assert_eq!(
+            reason("(?R HeadCamera MyRobot)"),
+            NeedsProver::VariableRelation
+        );
+        assert_eq!(
+            reason("(monetaryValue X (MeasureFn ?N Hertz))"),
+            NeedsProver::ComplexArgument
+        );
     }
 }

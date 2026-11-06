@@ -26,7 +26,9 @@ pub enum ProjectError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum QueryError {
-    #[error("The query has a syntax error. Write one query in parentheses, for example (instance ?X Camera).")]
+    #[error(
+        "The query has a syntax error. Write one query in parentheses, for example (instance ?X Camera)."
+    )]
     Syntax,
 
     #[error("Write one query in parentheses, for example (instance ?X Camera).")]

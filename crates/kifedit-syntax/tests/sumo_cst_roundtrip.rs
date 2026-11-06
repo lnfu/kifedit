@@ -25,7 +25,11 @@ fn cst_is_lossless_on_sumo() {
             for error in parsed.errors.iter().take(3) {
                 let start = usize::from(error.range.start());
                 let line = src[..start].matches('\n').count() + 1;
-                eprintln!("  line {line}: {} {}", error.kind.code(), error.kind.message());
+                eprintln!(
+                    "  line {line}: {} {}",
+                    error.kind.code(),
+                    error.kind.message()
+                );
             }
         }
 

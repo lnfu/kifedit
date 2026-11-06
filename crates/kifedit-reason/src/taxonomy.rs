@@ -32,14 +32,23 @@ pub struct TaxonomyFacts {
 }
 
 impl TaxonomyFacts {
-    pub fn collect<'a>(formulas: impl IntoIterator<Item = &'a Formula>, interner: &Interner) -> Self {
+    pub fn collect<'a>(
+        formulas: impl IntoIterator<Item = &'a Formula>,
+        interner: &Interner,
+    ) -> Self {
         let [subclass, subrelation, sub_attribute, instance] =
             ["subclass", "subrelation", "subAttribute", "instance"].map(|r| interner.get(r));
         let mut facts = Self::default();
         for formula in formulas {
-            let Term::App(head, _) = &formula.term else { continue };
-            let Term::Symbol(relation) = head.as_ref() else { continue };
-            let Some(pair) = symbol_pair(&formula.term) else { continue };
+            let Term::App(head, _) = &formula.term else {
+                continue;
+            };
+            let Term::Symbol(relation) = head.as_ref() else {
+                continue;
+            };
+            let Some(pair) = symbol_pair(&formula.term) else {
+                continue;
+            };
             let list = match Some(*relation) {
                 r if r == subclass => &mut facts.subclass,
                 r if r == subrelation => &mut facts.subrelation,
@@ -65,7 +74,10 @@ pub struct Taxonomy {
 
 impl Taxonomy {
     pub fn build(index: &Index, interner: &Interner) -> Self {
-        Self::from_facts(&[TaxonomyFacts::collect(index.formulas(), interner)], interner)
+        Self::from_facts(
+            &[TaxonomyFacts::collect(index.formulas(), interner)],
+            interner,
+        )
     }
 
     /// 各檔的分類事實依 FileId 順序串接，結果與 build 相同
@@ -93,11 +105,17 @@ impl Taxonomy {
     }
 
     pub fn instance_of(&self, individual: Symbol) -> &[Symbol] {
-        self.instance_of.get(&individual).map(Vec::as_slice).unwrap_or_default()
+        self.instance_of
+            .get(&individual)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn instances_of(&self, class: Symbol) -> &[Symbol] {
-        self.instances.get(&class).map(Vec::as_slice).unwrap_or_default()
+        self.instances
+            .get(&class)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// 直接的類別，加上這些類別的所有祖先；不重複，近的在前
@@ -207,6 +225,10 @@ mod tests {
         let camera = interner.get("Camera").unwrap();
         let head_camera = interner.get("HeadCamera").unwrap();
         assert_eq!(taxonomy.instances_of(camera), [head_camera]);
-        assert!(taxonomy.instances_of(interner.get("Device").unwrap()).is_empty());
+        assert!(
+            taxonomy
+                .instances_of(interner.get("Device").unwrap())
+                .is_empty()
+        );
     }
 }

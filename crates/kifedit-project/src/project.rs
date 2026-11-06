@@ -83,12 +83,19 @@ impl Project {
         let input = ProjectInput::new(&db, slots.iter().flatten().map(|f| f.input).collect());
 
         // 每個檔案一個工作：解析、建索引（§15.2 策略 1）；每個執行緒持有資料庫的複本
-        slots.par_iter().flatten().for_each_with(db.clone(), |db, file| {
-            file_index(&*db, file.input);
-        });
+        slots
+            .par_iter()
+            .flatten()
+            .for_each_with(db.clone(), |db, file| {
+                file_index(&*db, file.input);
+            });
         project_taxonomy(&db, input);
 
-        let ids = slots.iter().flatten().map(|f| (f.path.clone(), f.id)).collect();
+        let ids = slots
+            .iter()
+            .flatten()
+            .map(|f| (f.path.clone(), f.id))
+            .collect();
         let versions = vec![0; slots.len()];
         Ok(Self {
             root,
@@ -126,8 +133,12 @@ impl Project {
     /// 依目前的磁碟內容與 .kifignore 重新決定專案的檔案：加入新的 .kif 檔，移除已不存在或被排除的檔案，
     /// 更新角色。已在專案中的檔案保留記憶體中的文字（可能有未存檔的修改）
     pub fn refresh_files(&mut self) -> Result<FileChanges, ProjectError> {
-        let wanted: HashMap<PathBuf, FileRole> =
-            self.config.files(&self.root)?.into_iter().map(|(role, path)| (path, role)).collect();
+        let wanted: HashMap<PathBuf, FileRole> = self
+            .config
+            .files(&self.root)?
+            .into_iter()
+            .map(|(role, path)| (path, role))
+            .collect();
         let mut changes = FileChanges::default();
 
         for slot in &mut self.slots {
@@ -207,8 +218,13 @@ impl Project {
 
     /// 一個檔案的靜態檢查結果（§7），已套用 `[checks]` 的嚴重度覆寫；只重查受修改影響的部分
     pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
-        let Some(file) = self.file(id) else { return Vec::new() };
-        with_overrides(&self.config.checks, check_file(&self.db, self.input, file.input))
+        let Some(file) = self.file(id) else {
+            return Vec::new();
+        };
+        with_overrides(
+            &self.config.checks,
+            check_file(&self.db, self.input, file.input),
+        )
     }
 
     /// 與 diagnostics 相同，另外附上行、欄與 related 的位置
@@ -243,9 +259,11 @@ impl Project {
     pub fn check_all(&self) {
         let project = self.input;
         let inputs: Vec<File> = self.files().map(|f| f.input).collect();
-        inputs.into_par_iter().for_each_with(self.db.clone(), |db, file| {
-            check_file(&*db, project, file);
-        });
+        inputs
+            .into_par_iter()
+            .for_each_with(self.db.clone(), |db, file| {
+                check_file(&*db, project, file);
+            });
     }
 
     pub fn edit(&mut self, id: FileId, edits: &[TextEdit]) -> Result<Vec<TextEdit>, EditFileError> {
@@ -308,7 +326,9 @@ impl Snapshot {
     }
 
     pub fn diagnostics(&self, id: FileId) -> Vec<Diagnostic> {
-        let Some(file) = self.file(id) else { return Vec::new() };
+        let Some(file) = self.file(id) else {
+            return Vec::new();
+        };
         with_overrides(&self.checks, check_file(&self.db, self.input, file.input))
     }
 
@@ -319,16 +339,27 @@ impl Snapshot {
     /// 為已取得的診斷加上行、欄與 related 的位置
     pub fn locate(&self, id: FileId, diagnostics: Vec<Diagnostic>) -> Vec<LocatedDiagnostic> {
         let text = self.text(id).unwrap_or_default();
-        locate(text, diagnostics, project_index(&self.db, self.input), |f| self.text(f))
+        locate(
+            text,
+            diagnostics,
+            project_index(&self.db, self.input),
+            |f| self.text(f),
+        )
     }
 }
 
-fn with_overrides(checks: &BTreeMap<String, Severity>, diagnostics: &[Diagnostic]) -> Vec<Diagnostic> {
+fn with_overrides(
+    checks: &BTreeMap<String, Severity>,
+    diagnostics: &[Diagnostic],
+) -> Vec<Diagnostic> {
     diagnostics
         .iter()
         .filter_map(|d| {
             let severity = checks.get(d.code).copied().unwrap_or(d.severity);
-            (severity != Severity::Off).then(|| Diagnostic { severity, ..d.clone() })
+            (severity != Severity::Off).then(|| Diagnostic {
+                severity,
+                ..d.clone()
+            })
         })
         .collect()
 }
